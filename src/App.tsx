@@ -6,6 +6,7 @@ import {
   Box,
   Boxes,
   Brain,
+  Calendar,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -17,14 +18,21 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Hash,
   History,
+  Layers,
   LayoutDashboard,
+  Link2,
+  List,
   ListTree,
   Loader2,
   Moon,
   Search,
   ShieldCheck,
   Sun,
+  Tag,
+  Type,
+  Users,
   X,
 } from "lucide-solid";
 import type { Accessor, JSX } from "solid-js";
@@ -524,14 +532,18 @@ function App(props: AppProps) {
           <div class="flex shrink-0 items-center gap-1.5">
             <ViewSegmented view={docView()} onChange={setDocView} />
             <WorkspaceSwitcher
-              onHome={goHome}
               onSelectProject={(key) => {
+                // preserva a view atual (filetree ⟷ overview) ao trocar de projeto
+                const view = docView();
                 setTreeScope(key.project);
                 openProject(key);
+                setDocView(view);
               }}
               onSelectWorkspace={() => {
+                const view = docView();
                 setTreeScope(null);
                 openWorkspace(selectedWorkspace() ?? "");
+                setDocView(view);
               }}
               projects={workspaceProjects()}
               scope={treeScope()}
@@ -855,7 +867,6 @@ function Avatar() {
 }
 
 function WorkspaceSwitcher(props: {
-  onHome: () => void;
   onSelectProject: (key: ProjectKey) => void;
   onSelectWorkspace: () => void;
   projects: ProjectSummary[];
@@ -886,18 +897,6 @@ function WorkspaceSwitcher(props: {
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div class="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
-          <button
-            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground outline-none transition hover:bg-hover"
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              props.onHome();
-            }}
-          >
-            <Brain class="shrink-0 text-muted-foreground" size={15} />
-            {t(() => m.nav_home())}
-          </button>
-          <div class="my-1 border-t" />
           <button
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover"
             classList={{ "bg-selected text-primary": props.scope === null }}
@@ -1021,7 +1020,8 @@ function ProjectOverviewBody(props: {
               fallback={<small class="text-xs text-muted-foreground">{t(() => m.palette_searching())}</small>}
               when={briefing()}
             >
-              {(snapshot) => <BriefingView briefing={snapshot()} />}
+              {/* o handoff já aparece no card do topo quando há extras; evita duplicar o aviso */}
+              {(snapshot) => <BriefingView briefing={snapshot()} hidePendingHandoff={Boolean(props.extras?.handoff)} />}
             </Show>
           </div>
           <Show when={props.extras?.health}>
@@ -1240,7 +1240,7 @@ function WorkspaceOverviewBody(props: {
                       type="button"
                       onClick={() => props.onOpenProject(keyOf(project))}
                     >
-                      <Box class="shrink-0 text-primary" size={16} />
+                      <Box class="shrink-0 text-muted-foreground" size={16} />
                       <span class="flex min-w-0 flex-1 flex-col">
                         <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
                         <small class="truncate text-xs text-muted-foreground">{meta()}</small>
@@ -1819,8 +1819,8 @@ function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }
           </Show>
         </p>
       </header>
-      <Show when={frontmatterEntries(props.page.frontmatter).length > 0}>
-        <Frontmatter entries={frontmatterEntries(props.page.frontmatter)} />
+      <Show when={Object.keys(props.page.frontmatter ?? {}).length > 0}>
+        <Frontmatter frontmatter={props.page.frontmatter} />
       </Show>
       <div class="min-w-0 p-6">
         <Markdown source={stripFrontmatter(props.page.body_markdown)} />
@@ -1864,48 +1864,128 @@ function RelatedList(props: { title: string; items: RelatedPage[]; onNavigate: (
   );
 }
 
-function Frontmatter(props: { entries: [string, string][] }) {
-  const [open, setOpen] = createSignal(false);
+// Chaves cujo valor é renderizado como chip (mesmo visual de "tags").
+const FM_CHIP_KEYS = new Set(["kind", "tier", "type", "status", "audience", "category", "labels", "tags"]);
+
+// Ícone por chave conhecida; demais caem no genérico (List).
+function frontmatterIcon(key: string) {
+  switch (key.toLowerCase()) {
+    case "title":
+      return Type;
+    case "kind":
+    case "type":
+      return Tag;
+    case "tier":
+      return Layers;
+    case "tags":
+    case "category":
+    case "labels":
+      return Hash;
+    case "created":
+    case "updated":
+    case "date":
+      return Calendar;
+    case "status":
+      return Activity;
+    case "audience":
+    case "owner":
+      return Users;
+    case "sources":
+    case "related":
+    case "links":
+      return Link2;
+    default:
+      return List;
+  }
+}
+
+function frontmatterArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value.map((item) => (item == null ? "" : String(item))).filter((s) => s.length > 0);
+}
+
+// Heurística: tokens curtos sem espaço parecem tag → viram chip.
+function looksLikeTag(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 32 && !/\s/.test(trimmed);
+}
+
+function FrontmatterValue(props: { name: string; value: unknown }) {
+  const chips = (items: string[]) => (
+    <div class="flex flex-wrap gap-1.5">
+      <For each={items}>{(item) => <Chip class="bg-muted text-muted-foreground">{item}</Chip>}</For>
+    </div>
+  );
   return (
-    <details
-      class="group/fm border-b bg-muted/20 px-6 py-3"
-      data-testid="frontmatter"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary class="flex cursor-pointer list-none items-center gap-2 text-xs font-bold uppercase text-muted-foreground outline-none">
-        <ChevronRight class="transition group-open/fm:rotate-90" size={14} />
-        {t(() => m.reader_frontmatter())}
-        <span class="font-normal lowercase">({props.entries.length})</span>
-      </summary>
-      <Show when={open()}>
-        <dl class="mt-3 grid grid-cols-[minmax(6rem,12rem)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-          <For each={props.entries}>
-            {([key, value]) => (
-              <>
-                <dt class="truncate font-medium text-muted-foreground">{key}</dt>
-                <dd class="min-w-0 break-words font-mono text-xs text-foreground/80">{value}</dd>
-              </>
-            )}
-          </For>
-        </dl>
-      </Show>
-    </details>
+    <Show fallback={<span class="text-sm text-muted-foreground">—</span>} when={props.value != null && props.value !== ""}>
+      {(() => {
+        const value = props.value;
+        const arr = frontmatterArray(value);
+        if (arr) {
+          return arr.length > 0 ? chips(arr) : <span class="text-sm text-muted-foreground">—</span>;
+        }
+        if (typeof value === "object") {
+          return <span class="break-words font-mono text-xs text-foreground/80">{JSON.stringify(value)}</span>;
+        }
+        const str = String(value);
+        if (/^https?:\/\//i.test(str.trim())) {
+          return (
+            <a class="break-all text-sm text-primary underline-offset-2 hover:underline" href={str.trim()} rel="noreferrer" target="_blank">
+              {str}
+            </a>
+          );
+        }
+        if (FM_CHIP_KEYS.has(props.name.toLowerCase()) || looksLikeTag(str)) {
+          return chips([str.trim()]);
+        }
+        return <span class="break-words text-sm text-foreground/90">{str}</span>;
+      })()}
+    </Show>
   );
 }
 
-function frontmatterEntries(frontmatter: Record<string, unknown>): [string, string][] {
-  if (!frontmatter || typeof frontmatter !== "object") {
-    return [];
-  }
-  return Object.entries(frontmatter).map(([key, value]) => {
-    const text =
-      value === null || value === undefined
-        ? ""
-        : typeof value === "object"
-          ? JSON.stringify(value)
-          : String(value);
-    return [key, text] as [string, string];
-  });
+function Frontmatter(props: { frontmatter: Record<string, unknown> }) {
+  const [open, setOpen] = createSignal(false);
+  const entries = createMemo(() =>
+    Object.entries(props.frontmatter ?? {}).filter(([, value]) => value != null && value !== ""),
+  );
+  return (
+    <div class="px-6 pt-4">
+      <details
+        class="group/fm overflow-hidden rounded-lg border bg-card"
+        data-testid="frontmatter"
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary class="flex cursor-pointer list-none items-center gap-2 border-b border-transparent bg-muted/40 px-4 py-2.5 text-xs font-semibold text-foreground outline-none transition hover:bg-muted/60 group-open/fm:border-border">
+          <ChevronRight class="text-muted-foreground transition group-open/fm:rotate-90" size={14} />
+          <span>{t(() => m.reader_frontmatter())}</span>
+          <span class="font-normal text-muted-foreground">({entries().length})</span>
+        </summary>
+        <Show when={open()}>
+          <dl class="flex flex-col py-2">
+            <For each={entries()}>
+              {([key, value]) => {
+                const Icon = frontmatterIcon(key);
+                return (
+                  <div class="flex items-start gap-4 px-4 py-1.5 transition hover:bg-muted/30">
+                    <dt class="flex w-32 shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
+                      <Icon class="shrink-0" size={14} />
+                      <span class="truncate">{key}</span>
+                    </dt>
+                    <dd class="min-w-0 flex-1">
+                      <FrontmatterValue name={key} value={value} />
+                    </dd>
+                  </div>
+                );
+              }}
+            </For>
+          </dl>
+        </Show>
+      </details>
+    </div>
+  );
 }
 
 function BriefingView(props: { briefing: BriefingSnapshot; hidePendingHandoff?: boolean }) {
