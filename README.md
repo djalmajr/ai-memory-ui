@@ -58,7 +58,7 @@ search and without copying pages between workspaces.
 ## Stack
 
 - SolidJS + TanStack Router (file-based) + TanStack Query
-- Tailwind CSS v3 + Kobalte (solid-ui components)
+- Tailwind CSS v4 (`@tailwindcss/vite`) + Kobalte (solid-ui components)
 - i18n via inlang Paraglide JS (`en` / `pt-BR` / `es`)
 
 ## Develop
