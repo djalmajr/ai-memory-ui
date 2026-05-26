@@ -18,6 +18,8 @@
   "reader_supersedes": "supersedes",
   "reader_pinned": "pinned",
   "reader_frontmatter": "Frontmatter",
+  "reader_links": "References",
+  "reader_backlinks": "Referenced by",
   "inspector_title": "Inspector",
   "inspector_select_project": "Select a project.",
   "inspector_recent": "Recent",

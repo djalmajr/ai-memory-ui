@@ -105,7 +105,7 @@ export function Markdown(props: { class?: string; source: string }) {
     <div
       class={cn(
         "prose prose-sm max-w-none dark:prose-invert",
-        "prose-pre:bg-transparent prose-pre:p-0 prose-code:before:content-none prose-code:after:content-none",
+        "prose-code:before:content-none prose-code:after:content-none",
         props.class,
       )}
       data-testid="markdown"

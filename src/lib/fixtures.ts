@@ -191,11 +191,15 @@ export function fixtureListPages(key: ProjectKey): PageSummary[] {
 
 export function fixtureReadPage(key: ProjectKey, path: string): ApiPage {
   const page = pagesFor(key.project).find((item) => item.path === path) ?? pagesFor(key.project)[0];
+  const others = pagesFor(key.project).filter((item) => item.path !== page.path);
+  const toRelated = (item: FixturePage) => ({ kind: item.kind, path: item.path, title: item.title });
   return {
+    backlinks: others.slice(2, 3).map(toRelated),
     body_markdown: page.body_markdown,
     created_at: "2026-05-01T09:00:00Z",
     frontmatter: { kind: page.kind, tier: page.tier },
     kind: page.kind,
+    links: others.slice(0, 2).map(toRelated),
     path: page.path,
     pinned: page.pinned ?? false,
     project: key.project,
@@ -233,6 +237,41 @@ export function fixtureBriefing(key: ProjectKey): BriefingSnapshot {
   };
 }
 
+// Extras escopados a um projeto (handoff + briefing + saúde do projeto) —
+// só p/ o preview de fixtures.
+export function fixtureProjectExtras(key: ProjectKey): WorkspaceExtras {
+  const pages = pagesFor(key.project);
+  const last = pages[pages.length - 1];
+  const orphanPages = last
+    ? [{ kind: last.kind, path: last.path, project: key.project, title: last.title, workspace: key.workspace }]
+    : [];
+  return {
+    briefing: fixtureBriefing(key),
+    handoff:
+      key.project === "smart-city"
+        ? {
+            agent: "Claude Code",
+            at: "2026-05-24T10:00:00Z",
+            next_steps: ["Reembedar smart-city após o cutover.", "Validar isolamento por projeto."],
+            open_questions: ["Token por source já cobre todos os repositórios?"],
+            project: key.project,
+            summary:
+              "Você ajustava a ingestão da ETL para smart-city: 17 páginas publicadas, faltou revalidar os embeddings.",
+          }
+        : null,
+    health: {
+      audited_at: "2026-05-24T10:00:00Z",
+      contradictions: 0,
+      duplicate_pages: [],
+      duplicates: 0,
+      orphan_pages: orphanPages,
+      orphans: orphanPages.length,
+      stale: 0,
+      stale_pages: [],
+    },
+  };
+}
+
 // Extras do workspace overview que a API do ai-memory não expõe hoje
 // (handoff, briefing de workspace, saúde da memória) — só p/ o preview.
 export function fixtureWorkspaceExtras(workspace: string): WorkspaceExtras {
@@ -248,7 +287,16 @@ export function fixtureWorkspaceExtras(workspace: string): WorkspaceExtras {
         rules: [],
       },
       handoff: null,
-      health: { audited_at: null, contradictions: 0, duplicates: 0, orphans: 0, stale: 0 },
+      health: {
+        audited_at: null,
+        contradictions: 0,
+        duplicate_pages: [],
+        duplicates: 0,
+        orphan_pages: [],
+        orphans: 0,
+        stale: 0,
+        stale_pages: [],
+      },
     };
   }
   return {
@@ -276,7 +324,26 @@ export function fixtureWorkspaceExtras(workspace: string): WorkspaceExtras {
       summary:
         "Você estava migrando a ETL para escrever no ai-memory via /admin/write-page. smart-city publicou 17 páginas, front-manager 9; smart-city falhou no clone antes do fix de token por source.",
     },
-    health: { audited_at: "2026-05-24T11:00:00Z", contradictions: 0, duplicates: 1, orphans: 3, stale: 2 },
+    health: {
+      audited_at: "2026-05-24T11:00:00Z",
+      contradictions: 0,
+      duplicate_pages: [
+        { kind: "fact", path: "README.md", project: "smart-city", title: "README", workspace: WS },
+        { kind: "fact", path: "README.md", project: "front-manager", title: "README", workspace: WS },
+      ],
+      duplicates: 1,
+      orphan_pages: [
+        { kind: "fact", path: "architecture/embeddings.md", project: "smart-city", title: "Embeddings", workspace: WS },
+        { kind: "fact", path: "architecture/overview.md", project: "smart-city", title: "Arquitetura — visão geral", workspace: WS },
+        { kind: "fact", path: "runbooks/deploy.md", project: "ops", title: "Runbook de deploy", workspace: WS },
+      ],
+      orphans: 3,
+      stale: 2,
+      stale_pages: [
+        { kind: "gotcha", path: "etl/gotchas.md", project: "smart-city", title: "ETL — gotchas", workspace: WS },
+        { kind: "fact", path: "ui/theming.md", project: "front-manager", title: "Theming", workspace: WS },
+      ],
+    },
   };
 }
 

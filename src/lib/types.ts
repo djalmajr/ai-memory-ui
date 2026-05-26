@@ -21,6 +21,12 @@ export interface PageSummary {
   updated_at: string;
 }
 
+export interface RelatedPage {
+  path: string;
+  title: string;
+  kind: string;
+}
+
 export interface ApiPage {
   workspace: string;
   project: string;
@@ -34,6 +40,8 @@ export interface ApiPage {
   supersedes: string | null;
   frontmatter: Record<string, unknown>;
   body_markdown: string;
+  links: RelatedPage[];
+  backlinks: RelatedPage[];
 }
 
 export interface SearchHit {
@@ -94,12 +102,23 @@ export interface WorkspaceHandoff {
   next_steps: string[];
 }
 
+export interface HealthPage {
+  workspace: string;
+  project: string;
+  path: string;
+  title: string;
+  kind: string;
+}
+
 export interface MemoryHealth {
   stale: number;
   duplicates: number;
   contradictions: number;
   orphans: number;
   audited_at: string | null;
+  stale_pages: HealthPage[];
+  duplicate_pages: HealthPage[];
+  orphan_pages: HealthPage[];
 }
 
 export interface WorkspaceExtras {

@@ -6,6 +6,7 @@ import {
   Box,
   Boxes,
   Brain,
+  Calendar,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -17,14 +18,21 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Hash,
   History,
+  Layers,
   LayoutDashboard,
+  Link2,
+  List,
   ListTree,
   Loader2,
   Moon,
   Search,
   ShieldCheck,
   Sun,
+  Tag,
+  Type,
+  Users,
   X,
 } from "lucide-solid";
 import type { Accessor, JSX } from "solid-js";
@@ -57,6 +65,7 @@ import {
   listPages,
   listProjects,
   listWorkspaces,
+  projectExtras,
   readPage,
   recentPages,
   searchPages,
@@ -65,11 +74,15 @@ import {
 import type {
   ApiPage,
   BriefingSnapshot,
+  HealthPage,
+  MemoryHealth,
   PageSummary,
   ProjectKey,
   ProjectSummary,
+  RelatedPage,
   SearchHit,
   WorkspaceExtras,
+  WorkspaceHandoff,
   WorkspaceSummary,
 } from "~/lib/types";
 
@@ -273,6 +286,25 @@ function App(props: AppProps) {
       return null;
     }
     return workspaceExtras$.data ?? null;
+  });
+
+  // Extras do projeto (handoff, briefing e saúde escopados ao projeto) — só no
+  // overview de um projeto selecionado; degrada p/ null.
+  const projectExtras$ = useQuery<WorkspaceExtras | null>(() => {
+    const key = selectedKey();
+    const enabled = Boolean(key) && !isWorkspaceOnly();
+    return {
+      enabled,
+      queryFn: () => (key ? projectExtras(key) : Promise.resolve(null)),
+      queryKey: ["project-extras", key?.workspace ?? "", key?.project ?? ""],
+      staleTime: 15_000,
+    };
+  });
+  const projectExtrasData = createMemo(() => {
+    if (projectExtras$.isPending || projectExtras$.isError) {
+      return null;
+    }
+    return projectExtras$.data ?? null;
   });
 
   // Escopo "workspace" da busca = todos os projetos do workspace (via POST scopes).
@@ -500,14 +532,18 @@ function App(props: AppProps) {
           <div class="flex shrink-0 items-center gap-1.5">
             <ViewSegmented view={docView()} onChange={setDocView} />
             <WorkspaceSwitcher
-              onHome={goHome}
               onSelectProject={(key) => {
+                // preserva a view atual (filetree ⟷ overview) ao trocar de projeto
+                const view = docView();
                 setTreeScope(key.project);
                 openProject(key);
+                setDocView(view);
               }}
               onSelectWorkspace={() => {
+                const view = docView();
                 setTreeScope(null);
                 openWorkspace(selectedWorkspace() ?? "");
+                setDocView(view);
               }}
               projects={workspaceProjects()}
               scope={treeScope()}
@@ -523,6 +559,7 @@ function App(props: AppProps) {
             <OverviewPanel
               briefing={briefingData()}
               extras={workspaceExtrasData()}
+              projectExtras={projectExtrasData()}
               isWorkspace={isWorkspaceOnly()}
               onBack={() => (isWorkspaceOnly() ? goHome() : openWorkspace(selectedWorkspace() ?? ""))}
               onOpenDoc={(project, path) => {
@@ -630,7 +667,17 @@ function App(props: AppProps) {
                   }
                   when={pageData()}
                 >
-                  {(current) => <PageReader page={current()} />}
+                  {(current) => (
+                    <PageReader
+                      page={current()}
+                      onNavigate={(path) => {
+                        const k = selectedKey();
+                        if (k) {
+                          navigateToPage({ key: k, path });
+                        }
+                      }}
+                    />
+                  )}
                 </Show>
               </QueryBoundary>
             </Show>
@@ -820,7 +867,6 @@ function Avatar() {
 }
 
 function WorkspaceSwitcher(props: {
-  onHome: () => void;
   onSelectProject: (key: ProjectKey) => void;
   onSelectWorkspace: () => void;
   projects: ProjectSummary[];
@@ -851,18 +897,6 @@ function WorkspaceSwitcher(props: {
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div class="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
-          <button
-            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground outline-none transition hover:bg-hover"
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              props.onHome();
-            }}
-          >
-            <Brain class="shrink-0 text-muted-foreground" size={15} />
-            {t(() => m.nav_home())}
-          </button>
-          <div class="my-1 border-t" />
           <button
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover"
             classList={{ "bg-selected text-primary": props.scope === null }}
@@ -938,52 +972,63 @@ function ViewSegmented(props: { onChange: (view: DocView) => void; view: DocView
 
 function ProjectOverviewBody(props: {
   briefing: BriefingSnapshot | null;
+  extras: WorkspaceExtras | null;
   onOpenDoc: (path: string) => void;
   recent: PageSummary[];
 }) {
+  // Project extras (when available) carry a project-scoped briefing; fall back
+  // to the standalone briefing query that also feeds the documents inspector.
+  const briefing = () => props.extras?.briefing ?? props.briefing;
   return (
-    <div class="grid grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] gap-5 max-lg:grid-cols-1">
-      <section class="min-w-0 rounded-lg border bg-card p-1.5">
-        <div class="mb-1 flex items-center gap-2 px-2 pt-1.5 text-sm font-semibold">
-          <Clock3 class="text-muted-foreground" size={15} />
-          {t(() => m.inspector_recent())}
-        </div>
-        <div class="flex flex-col">
-          <For each={props.recent}>
-            {(item) => (
-              <button
-                class="flex items-center gap-2 rounded-md p-2 text-left outline-none transition hover:bg-hover"
-                type="button"
-                onClick={() => props.onOpenDoc(item.path)}
-              >
-                <FileText class="shrink-0 text-muted-foreground" size={15} />
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <strong class="truncate text-sm font-medium leading-tight">{item.title}</strong>
-                  <small class="truncate text-xs text-muted-foreground">{item.path}</small>
-                </span>
-                <Show when={item.kind && item.kind.toLowerCase() !== "note"}>
-                  <KindBadge kind={item.kind} />
-                </Show>
-                <small class="shrink-0 text-xs text-muted-foreground">{formatDate(item.updated_at)}</small>
-              </button>
-            )}
-          </For>
-        </div>
-      </section>
-      <aside class="flex min-w-0 flex-col gap-4">
-        <div class="rounded-lg border bg-card p-4">
-          <div class="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <ShieldCheck class="text-muted-foreground" size={15} />
-            {t(() => m.inspector_briefing())}
+    <div class="flex flex-col gap-6">
+      <Show when={props.extras?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
+      <div class="grid grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] gap-5 max-lg:grid-cols-1">
+        <section class="min-w-0 rounded-lg border bg-card p-1.5">
+          <div class="mb-1 flex items-center gap-2 px-2 pt-1.5 text-sm font-semibold">
+            <Clock3 class="text-muted-foreground" size={15} />
+            {t(() => m.inspector_recent())}
           </div>
-          <Show
-            fallback={<small class="text-xs text-muted-foreground">{t(() => m.palette_searching())}</small>}
-            when={props.briefing}
-          >
-            {(snapshot) => <BriefingView briefing={snapshot()} />}
+          <div class="flex flex-col">
+            <For each={props.recent}>
+              {(item) => (
+                <button
+                  class="flex items-center gap-2 rounded-md p-2 text-left outline-none transition hover:bg-hover"
+                  type="button"
+                  onClick={() => props.onOpenDoc(item.path)}
+                >
+                  <FileText class="shrink-0 text-muted-foreground" size={15} />
+                  <span class="flex min-w-0 flex-1 flex-col">
+                    <strong class="truncate text-sm font-medium leading-tight">{item.title}</strong>
+                    <small class="truncate text-xs text-muted-foreground">{item.path}</small>
+                  </span>
+                  <Show when={item.kind && item.kind.toLowerCase() !== "note"}>
+                    <KindBadge kind={item.kind} />
+                  </Show>
+                  <small class="shrink-0 text-xs text-muted-foreground">{formatDate(item.updated_at)}</small>
+                </button>
+              )}
+            </For>
+          </div>
+        </section>
+        <aside class="flex min-w-0 flex-col gap-4">
+          <div class="rounded-lg border bg-card p-4">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <ShieldCheck class="text-muted-foreground" size={15} />
+              {t(() => m.inspector_briefing())}
+            </div>
+            <Show
+              fallback={<small class="text-xs text-muted-foreground">{t(() => m.palette_searching())}</small>}
+              when={briefing()}
+            >
+              {/* o handoff já aparece no card do topo quando há extras; evita duplicar o aviso */}
+              {(snapshot) => <BriefingView briefing={snapshot()} hidePendingHandoff={Boolean(props.extras?.handoff)} />}
+            </Show>
+          </div>
+          <Show when={props.extras?.health}>
+            {(health) => <HealthCard health={health()} onOpenDoc={(_project, path) => props.onOpenDoc(path)} />}
           </Show>
-        </div>
-      </aside>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -1005,18 +1050,155 @@ function workspaceRecentDocs(entries: ProjectPages[]): (PageSummary & { project:
     .slice(0, 6);
 }
 
-function HealthRow(props: { label: string; value: number }) {
+function HealthRow(props: {
+  label: string;
+  value: number;
+  pages?: HealthPage[];
+  onOpenDoc?: (project: string, path: string) => void;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const expandable = () => (props.pages?.length ?? 0) > 0;
   return (
-    <div class="flex items-center justify-between">
-      <span class="text-muted-foreground">{props.label}</span>
-      <span
-        class={cn(
-          "grid min-w-6 place-items-center rounded-full px-1.5 text-xs font-semibold",
-          props.value > 0 ? "bg-warning text-warning-foreground" : "bg-muted text-muted-foreground",
-        )}
+    <div>
+      <button
+        class="flex w-full items-center justify-between gap-2 text-left outline-none"
+        disabled={!expandable()}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
       >
-        {props.value}
-      </span>
+        <span class="flex items-center gap-1 text-muted-foreground">
+          <ChevronRight
+            class={cn("transition", expandable() ? "opacity-100" : "opacity-0")}
+            classList={{ "rotate-90": open() }}
+            size={13}
+          />
+          {props.label}
+        </span>
+        <span
+          class={cn(
+            "grid min-w-6 place-items-center rounded-full px-1.5 text-xs font-semibold",
+            props.value > 0 ? "bg-warning text-warning-foreground" : "bg-muted text-muted-foreground",
+          )}
+        >
+          {props.value}
+        </span>
+      </button>
+      <Show when={open() && expandable()}>
+        <ul class="mt-1.5 flex flex-col gap-0.5 border-l pl-3" data-testid="health-detail">
+          <For each={props.pages}>
+            {(item) => (
+              <li>
+                <button
+                  class="flex w-full items-center gap-2 rounded-md p-1 text-left text-xs outline-none transition hover:bg-hover"
+                  onClick={() => props.onOpenDoc?.(item.project, item.path)}
+                  type="button"
+                >
+                  <KindBadge kind={item.kind} />
+                  <span class="min-w-0 truncate">{item.title}</span>
+                  <span class="ml-auto shrink-0 truncate font-mono text-[10px] text-muted-foreground/70">
+                    {item.project}
+                  </span>
+                </button>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </div>
+  );
+}
+
+function HandoffCard(props: { handoff: WorkspaceHandoff }) {
+  const copy = () => {
+    const h = props.handoff;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(
+        `${h.summary}\n\n${t(() => m.ws_handoff_questions())}:\n- ${h.open_questions.join("\n- ")}\n\n${t(() => m.ws_handoff_next())}:\n- ${h.next_steps.join("\n- ")}`,
+      );
+    }
+  };
+  return (
+    <section class="rounded-xl border border-primary/30 bg-accent/40 p-5" data-testid="handoff-card">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <History class="shrink-0 text-primary" size={20} />
+          <div>
+            <h2 class="text-base font-semibold">{t(() => m.ws_handoff_title())}</h2>
+            <p class="text-xs text-muted-foreground">
+              handoff · {props.handoff.agent} · {formatRelative(props.handoff.at)} · {props.handoff.project}
+            </p>
+          </div>
+        </div>
+        <button
+          class="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+          onClick={copy}
+        >
+          <Copy size={14} /> {t(() => m.ws_handoff_copy())}
+        </button>
+      </div>
+      <p class="mt-3 text-sm">{props.handoff.summary}</p>
+      <div class="mt-4 grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+        <div class="flex flex-col gap-2">
+          <h3 class="text-xs font-bold uppercase text-muted-foreground">
+            {t(() => m.ws_handoff_questions())}
+          </h3>
+          <For each={props.handoff.open_questions}>
+            {(q) => (
+              <span class="flex items-start gap-2 text-sm">
+                <CircleHelp class="mt-0.5 shrink-0 text-muted-foreground" size={14} /> {q}
+              </span>
+            )}
+          </For>
+        </div>
+        <div class="flex flex-col gap-2">
+          <h3 class="text-xs font-bold uppercase text-muted-foreground">{t(() => m.ws_handoff_next())}</h3>
+          <For each={props.handoff.next_steps}>
+            {(s) => (
+              <span class="flex items-start gap-2 text-sm">
+                <Check class="mt-0.5 shrink-0 text-primary" size={14} /> {s}
+              </span>
+            )}
+          </For>
+        </div>
+      </div>
+      <p class="mt-4 text-xs text-muted-foreground">{t(() => m.ws_handoff_note())}</p>
+    </section>
+  );
+}
+
+function HealthCard(props: { health: MemoryHealth; onOpenDoc: (project: string, path: string) => void }) {
+  return (
+    <div class="rounded-lg border bg-card p-4" data-testid="health-card">
+      <div class="mb-3.5 flex items-center gap-2 text-sm font-semibold">
+        <ShieldCheck class="text-muted-foreground" size={15} />
+        {t(() => m.ws_health_title())}
+      </div>
+      <div class="flex flex-col gap-2 text-sm">
+        <HealthRow
+          label={t(() => m.health_stale())}
+          onOpenDoc={props.onOpenDoc}
+          pages={props.health.stale_pages}
+          value={props.health.stale}
+        />
+        <HealthRow
+          label={t(() => m.health_duplicates())}
+          onOpenDoc={props.onOpenDoc}
+          pages={props.health.duplicate_pages}
+          value={props.health.duplicates}
+        />
+        <HealthRow label={t(() => m.health_contradictions())} value={props.health.contradictions} />
+        <HealthRow
+          label={t(() => m.health_orphans())}
+          onOpenDoc={props.onOpenDoc}
+          pages={props.health.orphan_pages}
+          value={props.health.orphans}
+        />
+      </div>
+      <p class="mt-3 font-mono text-xs text-muted-foreground">
+        {">_ "}
+        {t(() => m.health_audit())}
+      </p>
     </div>
   );
 }
@@ -1031,66 +1213,9 @@ function WorkspaceOverviewBody(props: {
   const pagesOf = (project: string) =>
     props.workspacePages.find((entry) => entry.project === project)?.pages ?? [];
   const recent = createMemo(() => workspaceRecentDocs(props.workspacePages));
-  const copyHandoff = () => {
-    const h = props.extras?.handoff;
-    if (h && typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(
-        `${h.summary}\n\n${t(() => m.ws_handoff_questions())}:\n- ${h.open_questions.join("\n- ")}\n\n${t(() => m.ws_handoff_next())}:\n- ${h.next_steps.join("\n- ")}`,
-      );
-    }
-  };
   return (
     <div class="flex flex-col gap-6">
-      <Show when={props.extras?.handoff}>
-        {(h) => (
-          <section class="rounded-xl border border-primary/30 bg-accent/40 p-5">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex items-center gap-3">
-                <History class="shrink-0 text-primary" size={20} />
-                <div>
-                  <h2 class="text-base font-semibold">{t(() => m.ws_handoff_title())}</h2>
-                  <p class="text-xs text-muted-foreground">
-                    handoff · {h().agent} · {formatRelative(h().at)} · {h().project}
-                  </p>
-                </div>
-              </div>
-              <button
-                class="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-sm outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
-                type="button"
-                onClick={copyHandoff}
-              >
-                <Copy size={14} /> {t(() => m.ws_handoff_copy())}
-              </button>
-            </div>
-            <p class="mt-3 text-sm">{h().summary}</p>
-            <div class="mt-4 grid grid-cols-2 gap-5 max-sm:grid-cols-1">
-              <div class="flex flex-col gap-2">
-                <h3 class="text-xs font-bold uppercase text-muted-foreground">
-                  {t(() => m.ws_handoff_questions())}
-                </h3>
-                <For each={h().open_questions}>
-                  {(q) => (
-                    <span class="flex items-start gap-2 text-sm">
-                      <CircleHelp class="mt-0.5 shrink-0 text-muted-foreground" size={14} /> {q}
-                    </span>
-                  )}
-                </For>
-              </div>
-              <div class="flex flex-col gap-2">
-                <h3 class="text-xs font-bold uppercase text-muted-foreground">{t(() => m.ws_handoff_next())}</h3>
-                <For each={h().next_steps}>
-                  {(s) => (
-                    <span class="flex items-start gap-2 text-sm">
-                      <Check class="mt-0.5 shrink-0 text-primary" size={14} /> {s}
-                    </span>
-                  )}
-                </For>
-              </div>
-            </div>
-            <p class="mt-4 text-xs text-muted-foreground">{t(() => m.ws_handoff_note())}</p>
-          </section>
-        )}
-      </Show>
+      <Show when={props.extras?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
 
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] gap-5 max-lg:grid-cols-1">
         <div class="flex min-w-0 flex-col gap-6">
@@ -1115,7 +1240,7 @@ function WorkspaceOverviewBody(props: {
                       type="button"
                       onClick={() => props.onOpenProject(keyOf(project))}
                     >
-                      <Box class="shrink-0 text-primary" size={16} />
+                      <Box class="shrink-0 text-muted-foreground" size={16} />
                       <span class="flex min-w-0 flex-1 flex-col">
                         <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
                         <small class="truncate text-xs text-muted-foreground">{meta()}</small>
@@ -1173,24 +1298,7 @@ function WorkspaceOverviewBody(props: {
             )}
           </Show>
           <Show when={props.extras?.health}>
-            {(health) => (
-              <div class="rounded-lg border bg-card p-4">
-                <div class="mb-3.5 flex items-center gap-2 text-sm font-semibold">
-                  <ShieldCheck class="text-muted-foreground" size={15} />
-                  {t(() => m.ws_health_title())}
-                </div>
-                <div class="flex flex-col gap-2 text-sm">
-                  <HealthRow label={t(() => m.health_stale())} value={health().stale} />
-                  <HealthRow label={t(() => m.health_duplicates())} value={health().duplicates} />
-                  <HealthRow label={t(() => m.health_contradictions())} value={health().contradictions} />
-                  <HealthRow label={t(() => m.health_orphans())} value={health().orphans} />
-                </div>
-                <p class="mt-3 font-mono text-xs text-muted-foreground">
-                  {">_ "}
-                  {t(() => m.health_audit())}
-                </p>
-              </div>
-            )}
+            {(health) => <HealthCard health={health()} onOpenDoc={props.onOpenDoc} />}
           </Show>
         </aside>
       </div>
@@ -1201,6 +1309,7 @@ function WorkspaceOverviewBody(props: {
 function OverviewPanel(props: {
   briefing: BriefingSnapshot | null;
   extras: WorkspaceExtras | null;
+  projectExtras: WorkspaceExtras | null;
   isWorkspace: boolean;
   onBack: () => void;
   onOpenDoc: (project: string, path: string) => void;
@@ -1252,6 +1361,7 @@ function OverviewPanel(props: {
         fallback={
           <ProjectOverviewBody
             briefing={props.briefing}
+            extras={props.projectExtras}
             onOpenDoc={(path) => props.onOpenDoc(props.project ?? "", path)}
             recent={props.recent}
           />
@@ -1665,7 +1775,7 @@ function FileTreeNodes(props: {
   );
 }
 
-function PageReader(props: { page: ApiPage }) {
+function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }) {
   return (
     <article class="min-w-0" data-testid="page-reader">
       <header class="border-b p-6">
@@ -1709,58 +1819,173 @@ function PageReader(props: { page: ApiPage }) {
           </Show>
         </p>
       </header>
-      <Show when={frontmatterEntries(props.page.frontmatter).length > 0}>
-        <Frontmatter entries={frontmatterEntries(props.page.frontmatter)} />
+      <Show when={Object.keys(props.page.frontmatter ?? {}).length > 0}>
+        <Frontmatter frontmatter={props.page.frontmatter} />
       </Show>
       <div class="min-w-0 p-6">
         <Markdown source={stripFrontmatter(props.page.body_markdown)} />
       </div>
+      <Show when={props.page.links.length > 0 || props.page.backlinks.length > 0}>
+        <footer class="grid gap-6 border-t p-6 sm:grid-cols-2" data-testid="page-relations">
+          <RelatedList items={props.page.links} onNavigate={props.onNavigate} title={t(() => m.reader_links())} />
+          <RelatedList items={props.page.backlinks} onNavigate={props.onNavigate} title={t(() => m.reader_backlinks())} />
+        </footer>
+      </Show>
     </article>
   );
 }
 
-function Frontmatter(props: { entries: [string, string][] }) {
-  const [open, setOpen] = createSignal(false);
+function RelatedList(props: { title: string; items: RelatedPage[]; onNavigate: (path: string) => void }) {
   return (
-    <details
-      class="group/fm border-b bg-muted/20 px-6 py-3"
-      data-testid="frontmatter"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary class="flex cursor-pointer list-none items-center gap-2 text-xs font-bold uppercase text-muted-foreground outline-none">
-        <ChevronRight class="transition group-open/fm:rotate-90" size={14} />
-        {t(() => m.reader_frontmatter())}
-        <span class="font-normal lowercase">({props.entries.length})</span>
-      </summary>
-      <Show when={open()}>
-        <dl class="mt-3 grid grid-cols-[minmax(6rem,12rem)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-          <For each={props.entries}>
-            {([key, value]) => (
-              <>
-                <dt class="truncate font-medium text-muted-foreground">{key}</dt>
-                <dd class="min-w-0 break-words font-mono text-xs text-foreground/80">{value}</dd>
-              </>
+    <Show when={props.items.length > 0}>
+      <section>
+        <h3 class="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+          {props.title}
+          <span class="font-normal lowercase">({props.items.length})</span>
+        </h3>
+        <ul class="flex flex-col gap-1">
+          <For each={props.items}>
+            {(item) => (
+              <li>
+                <button
+                  class="flex w-full items-center gap-2 rounded-md p-1.5 text-left outline-none transition hover:bg-hover"
+                  onClick={() => props.onNavigate(item.path)}
+                  type="button"
+                >
+                  <KindBadge kind={item.kind} />
+                  <span class="min-w-0 truncate text-sm">{item.title}</span>
+                </button>
+              </li>
             )}
           </For>
-        </dl>
-      </Show>
-    </details>
+        </ul>
+      </section>
+    </Show>
   );
 }
 
-function frontmatterEntries(frontmatter: Record<string, unknown>): [string, string][] {
-  if (!frontmatter || typeof frontmatter !== "object") {
-    return [];
+// Chaves cujo valor é renderizado como chip (mesmo visual de "tags").
+const FM_CHIP_KEYS = new Set(["kind", "tier", "type", "status", "audience", "category", "labels", "tags"]);
+
+// Ícone por chave conhecida; demais caem no genérico (List).
+function frontmatterIcon(key: string) {
+  switch (key.toLowerCase()) {
+    case "title":
+      return Type;
+    case "kind":
+    case "type":
+      return Tag;
+    case "tier":
+      return Layers;
+    case "tags":
+    case "category":
+    case "labels":
+      return Hash;
+    case "created":
+    case "updated":
+    case "date":
+      return Calendar;
+    case "status":
+      return Activity;
+    case "audience":
+    case "owner":
+      return Users;
+    case "sources":
+    case "related":
+    case "links":
+      return Link2;
+    default:
+      return List;
   }
-  return Object.entries(frontmatter).map(([key, value]) => {
-    const text =
-      value === null || value === undefined
-        ? ""
-        : typeof value === "object"
-          ? JSON.stringify(value)
-          : String(value);
-    return [key, text] as [string, string];
-  });
+}
+
+function frontmatterArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value.map((item) => (item == null ? "" : String(item))).filter((s) => s.length > 0);
+}
+
+// Heurística: tokens curtos sem espaço parecem tag → viram chip.
+function looksLikeTag(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 32 && !/\s/.test(trimmed);
+}
+
+function FrontmatterValue(props: { name: string; value: unknown }) {
+  const chips = (items: string[]) => (
+    <div class="flex flex-wrap gap-1.5">
+      <For each={items}>{(item) => <Chip class="bg-muted text-muted-foreground">{item}</Chip>}</For>
+    </div>
+  );
+  return (
+    <Show fallback={<span class="text-sm text-muted-foreground">—</span>} when={props.value != null && props.value !== ""}>
+      {(() => {
+        const value = props.value;
+        const arr = frontmatterArray(value);
+        if (arr) {
+          return arr.length > 0 ? chips(arr) : <span class="text-sm text-muted-foreground">—</span>;
+        }
+        if (typeof value === "object") {
+          return <span class="break-words font-mono text-xs text-foreground/80">{JSON.stringify(value)}</span>;
+        }
+        const str = String(value);
+        if (/^https?:\/\//i.test(str.trim())) {
+          return (
+            <a class="break-all text-sm text-primary underline-offset-2 hover:underline" href={str.trim()} rel="noreferrer" target="_blank">
+              {str}
+            </a>
+          );
+        }
+        if (FM_CHIP_KEYS.has(props.name.toLowerCase()) || looksLikeTag(str)) {
+          return chips([str.trim()]);
+        }
+        return <span class="break-words text-sm text-foreground/90">{str}</span>;
+      })()}
+    </Show>
+  );
+}
+
+function Frontmatter(props: { frontmatter: Record<string, unknown> }) {
+  const [open, setOpen] = createSignal(false);
+  const entries = createMemo(() =>
+    Object.entries(props.frontmatter ?? {}).filter(([, value]) => value != null && value !== ""),
+  );
+  return (
+    <div class="px-6 pt-4">
+      <details
+        class="group/fm overflow-hidden rounded-lg border bg-card"
+        data-testid="frontmatter"
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary class="flex cursor-pointer list-none items-center gap-2 border-b border-transparent bg-muted/40 px-4 py-2.5 text-xs font-semibold text-foreground outline-none transition hover:bg-muted/60 group-open/fm:border-border">
+          <ChevronRight class="text-muted-foreground transition group-open/fm:rotate-90" size={14} />
+          <span>{t(() => m.reader_frontmatter())}</span>
+          <span class="font-normal text-muted-foreground">({entries().length})</span>
+        </summary>
+        <Show when={open()}>
+          <dl class="flex flex-col py-2">
+            <For each={entries()}>
+              {([key, value]) => {
+                const Icon = frontmatterIcon(key);
+                return (
+                  <div class="flex items-start gap-4 px-4 py-1.5 transition hover:bg-muted/30">
+                    <dt class="flex w-32 shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
+                      <Icon class="shrink-0" size={14} />
+                      <span class="truncate">{key}</span>
+                    </dt>
+                    <dd class="min-w-0 flex-1">
+                      <FrontmatterValue name={key} value={value} />
+                    </dd>
+                  </div>
+                );
+              }}
+            </For>
+          </dl>
+        </Show>
+      </details>
+    </div>
+  );
 }
 
 function BriefingView(props: { briefing: BriefingSnapshot; hidePendingHandoff?: boolean }) {

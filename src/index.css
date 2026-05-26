@@ -287,3 +287,20 @@
     grid-area: insights;
   }
 }
+
+/* Code blocks — SEM @layer de propósito: regras sem cascade layer vencem as
+   do plugin @tailwindcss/typography (que entram via layer). Sem isto o prose
+   força fundo escuro padrão + fonte ~11px (prose-sm) e o texto fica ilegível
+   no tema claro. As vars do tema já viram light/dark, daí servirem p/ os modos
+   normal e invertido. Os tokens hljs (.hljs-*, em @layer components) seguem
+   coloridos pois só competem na cor base, não nos spans. */
+.prose {
+  --tw-prose-pre-bg: hsl(var(--muted) / 0.7);
+  --tw-prose-pre-code: hsl(var(--foreground) / 0.9);
+  --tw-prose-invert-pre-bg: hsl(var(--muted) / 0.7);
+  --tw-prose-invert-pre-code: hsl(var(--foreground) / 0.9);
+}
+.prose pre.hljs {
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
