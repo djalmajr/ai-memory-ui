@@ -51,3 +51,40 @@ test("o gatilho de busca abre a paleta", async ({ page }) => {
   await expect(page.getByText("Ready", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /Search memory/i })).toBeVisible();
 });
+
+test("overview do projeto mostra handoff + saúde escopados ao projeto", async ({ page }) => {
+  await page.goto("/web/projects/centralit/smart-city");
+
+  // handoff do projeto (smart-city tem um handoff aberto na fixture)
+  await expect(page.getByTestId("handoff-card")).toBeVisible();
+  // card de saúde do projeto + briefing
+  await expect(page.getByTestId("health-card")).toBeVisible();
+  await expect(page.getByText("Briefing", { exact: true })).toBeVisible();
+});
+
+test("a saúde da memória expande em lista clicável e navega ao doc", async ({ page }) => {
+  await page.goto("/web/projects/centralit");
+  await expect(page.getByText("Memory health")).toBeVisible();
+
+  // a linha "Orphans (no links)" tem valor 3 → expande a lista de páginas
+  await page.getByRole("button", { name: /Orphans/ }).click();
+  const detail = page.getByTestId("health-detail").first();
+  await expect(detail).toBeVisible();
+
+  // clicar numa página órfã navega para o documento correspondente
+  await detail.getByRole("button").first().click();
+  await expect(page).toHaveURL(/\/projects\/centralit\/smart-city\/pages\/architecture\/embeddings\.md/);
+});
+
+test("o documento mostra referências e back-links clicáveis", async ({ page }) => {
+  await page.goto("/web/projects/centralit/smart-city/pages/README.md");
+
+  const relations = page.getByTestId("page-relations");
+  await expect(relations).toBeVisible();
+  await expect(relations.getByRole("heading", { name: /References/ })).toBeVisible();
+  await expect(relations.getByRole("heading", { name: /Referenced by/ })).toBeVisible();
+
+  // clicar numa referência navega para a página-alvo
+  await relations.getByRole("button").first().click();
+  await expect(page).toHaveURL(/\/pages\/_rules\/coding-style\.md/);
+});

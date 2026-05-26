@@ -1,6 +1,7 @@
 import {
   fixtureBriefing,
   fixtureListPages,
+  fixtureProjectExtras,
   fixtureProjects,
   fixtureReadPage,
   fixtureRecent,
@@ -92,6 +93,18 @@ export function workspaceExtras(workspace: string): Promise<WorkspaceExtras | nu
     return Promise.resolve(fixtureWorkspaceExtras(workspace));
   }
   return requestJson<WorkspaceExtras>(`/workspaces/${segment(workspace)}/extras`).catch(() => null);
+}
+
+// Handoff + briefing + saúde escopados a um projeto, via
+// GET /api/v1/workspaces/{ws}/projects/{proj}/extras (fork ai-memory). Em um
+// backend sem esse endpoint, degrada p/ null (handoff/saúde do projeto somem).
+export function projectExtras(key: ProjectKey, limit = 8): Promise<WorkspaceExtras | null> {
+  if (USE_FIXTURES) {
+    return Promise.resolve(fixtureProjectExtras(key));
+  }
+  return requestJson<WorkspaceExtras>(
+    `/workspaces/${segment(key.workspace)}/projects/${segment(key.project)}/extras?limit=${limit}`,
+  ).catch(() => null);
 }
 
 export function listPages(key: ProjectKey): Promise<PageSummary[]> {

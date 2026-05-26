@@ -18,6 +18,8 @@
   "reader_supersedes": "substitui",
   "reader_pinned": "fixada",
   "reader_frontmatter": "Frontmatter",
+  "reader_links": "Referencia",
+  "reader_backlinks": "Referenciado por",
   "inspector_title": "Inspector",
   "inspector_select_project": "Selecione um projeto.",
   "inspector_recent": "Recentes",
