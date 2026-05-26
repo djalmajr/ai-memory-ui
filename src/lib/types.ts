@@ -1,0 +1,109 @@
+export interface ProjectSummary {
+  workspace_name: string;
+  project_name: string;
+  page_count: number;
+  last_updated: string | null;
+}
+
+export interface WorkspaceSummary {
+  workspace_name: string;
+  project_count: number;
+  page_count: number;
+  last_updated: string | null;
+  current?: boolean;
+}
+
+export interface PageSummary {
+  path: string;
+  title: string;
+  kind: string;
+  tier: string;
+  updated_at: string;
+}
+
+export interface ApiPage {
+  workspace: string;
+  project: string;
+  path: string;
+  title: string;
+  kind: string;
+  tier: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  supersedes: string | null;
+  frontmatter: Record<string, unknown>;
+  body_markdown: string;
+}
+
+export interface SearchHit {
+  workspace: string;
+  project: string;
+  path: string;
+  title: string;
+  kind: string;
+  snippet: string;
+  rank: number;
+}
+
+export interface ActivityWindow {
+  days: number;
+  sessions: number;
+  observations: number;
+  pages_updated: number;
+}
+
+export interface BriefingPage {
+  path: string;
+  title: string;
+  kind: string;
+  updated_at: string;
+}
+
+export interface BriefingSnapshot {
+  counts: {
+    pages_latest: number;
+    pages_all: number;
+    sessions: number;
+    observations: number;
+  };
+  activity_7d: ActivityWindow;
+  activity_30d: ActivityWindow;
+  last_observation_at: string | null;
+  pending_handoff_count: number;
+  rules: BriefingPage[];
+  recent_pages: BriefingPage[];
+}
+
+export interface ProjectKey {
+  workspace: string;
+  project: string;
+}
+
+export interface SearchScope {
+  workspace: string;
+  project: string;
+}
+
+export interface WorkspaceHandoff {
+  agent: string;
+  at: string;
+  project: string;
+  summary: string;
+  open_questions: string[];
+  next_steps: string[];
+}
+
+export interface MemoryHealth {
+  stale: number;
+  duplicates: number;
+  contradictions: number;
+  orphans: number;
+  audited_at: string | null;
+}
+
+export interface WorkspaceExtras {
+  handoff: WorkspaceHandoff | null;
+  briefing: BriefingSnapshot;
+  health: MemoryHealth;
+}

@@ -1,0 +1,41 @@
+{
+  "name": "ai-memory-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --emit-ts-declarations",
+    "build": "npm run i18n && tsr generate && tsc -b && vite build",
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.13.11",
+    "@tanstack/solid-query": "^5.100.14",
+    "@tanstack/solid-router": "^1.170.8",
+    "highlight.js": "^11.11.1",
+    "lucide-solid": "^1.16.0",
+    "markdown-it": "^14.2.0",
+    "solid-js": "^1.9.12"
+  },
+  "devDependencies": {
+    "@inlang/paraglide-js": "^2.18.1",
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tanstack/router-cli": "^1.167.10",
+    "@tanstack/router-plugin": "^1.168.11",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^24.12.3",
+    "autoprefixer": "^10.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "postcss": "^8.5.15",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "3",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}
