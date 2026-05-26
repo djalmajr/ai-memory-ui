@@ -44,6 +44,7 @@ import { Button } from "~/components/button";
 import { Markdown, stripFrontmatter } from "~/components/markdown";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/select";
 import { Skeleton } from "~/components/skeleton";
+import { APP_NAME, APP_TAGLINE } from "~/lib/brand";
 import { history, recordVisit } from "~/lib/history";
 import type { VisitEntry } from "~/lib/history";
 import { locales, switchLocale, t, useLocale } from "~/lib/i18n";
@@ -482,8 +483,8 @@ function App(props: AppProps) {
           >
             <Brain class="shrink-0 text-primary" size={26} />
             <span class="flex flex-col leading-tight max-sm:hidden">
-              <strong class="text-sm font-semibold">ai-memory</strong>
-              <small class="text-xs text-muted-foreground">knowledge browser</small>
+              <strong class="text-sm font-semibold">{APP_NAME}</strong>
+              <small class="text-xs text-muted-foreground">{APP_TAGLINE}</small>
             </span>
           </button>
           <button
@@ -859,7 +860,7 @@ function WorkspaceSwitcher(props: {
             }}
           >
             <Brain class="shrink-0 text-muted-foreground" size={15} />
-            {t(() => m.switcher_namespaces())}
+            {t(() => m.nav_home())}
           </button>
           <div class="my-1 border-t" />
           <button
@@ -1240,7 +1241,7 @@ function OverviewPanel(props: {
           onClick={props.onBack}
         >
           <ChevronLeft size={16} />
-          {props.isWorkspace ? t(() => m.switcher_namespaces()) : props.workspace}
+          {props.isWorkspace ? t(() => m.nav_home()) : props.workspace}
         </button>
         <h1 class="text-2xl font-semibold leading-tight">
           {props.isWorkspace ? props.workspace : props.project}
@@ -1291,7 +1292,7 @@ function HomeScreen(props: {
         <div class="flex flex-col items-center gap-3 text-center">
           <Brain class="text-primary" size={60} />
           <div>
-            <h1 class="text-2xl font-semibold leading-tight">ai-memory</h1>
+            <h1 class="text-2xl font-semibold leading-tight">{APP_NAME}</h1>
             <p class="text-sm text-muted-foreground">{t(() => m.home_tagline())}</p>
           </div>
         </div>

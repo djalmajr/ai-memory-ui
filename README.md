@@ -71,15 +71,28 @@ npm run build    # generates dist/ (runs i18n + route gen + tsc + vite)
 
 Offline preview without a backend: `VITE_FIXTURES=1 npm run dev`.
 
+### Branding
+
+The header name/tagline are build-time env vars (default `ai-memory` /
+`knowledge browser`):
+
+```bash
+VITE_APP_NAME="Knowledge Base" VITE_APP_TAGLINE="run2biz" npm run build
+```
+
 ## Serve through ai-memory
 
 ```bash
 ai-memory serve --transport http --bind 127.0.0.1:49374 \
-  --workspace centralit --enable-web \
-  --web-ui-dir /path/to/ai-memory-ui/dist
+  --enable-web --web-ui-dir /path/to/ai-memory-ui/dist
 ```
 
 Then open `http://localhost:49374/web`.
+
+The server is **multi-workspace**: `/web` and `/api/v1` browse every workspace in
+the data dir. `--workspace`/`--project` are optional (default `default`) and only
+name the workspace/project auto-created and used as the default for session
+capture and MCP — they don't scope what the UI can see.
 
 ## Tests
 

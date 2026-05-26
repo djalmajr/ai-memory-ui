@@ -2,6 +2,7 @@
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "search_placeholder": "Buscar em todos os docs…",
   "switcher_namespaces": "Namespaces",
+  "nav_home": "Início",
   "switcher_all_projects": "Todos os projetos",
   "count_pages": "{count} páginas",
   "tree_filter_placeholder": "Filtrar arquivos…",

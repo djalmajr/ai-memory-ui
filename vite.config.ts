@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
+import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { defineConfig } from 'vite'
 import solid from 'vite-plugin-solid'
@@ -7,6 +8,7 @@ import solid from 'vite-plugin-solid'
 export default defineConfig({
   base: '/web/',
   plugins: [
+    tailwindcss(),
     // i18n via inlang Paraglide — compila messages/{locale}.json p/ src/paraglide.
     paraglideVitePlugin({
       project: './project.inlang',
