@@ -121,7 +121,7 @@ export interface MemoryHealth {
   orphan_pages: HealthPage[];
 }
 
-export interface WorkspaceExtras {
+export interface WorkspaceOverview {
   handoff: WorkspaceHandoff | null;
   briefing: BriefingSnapshot;
   health: MemoryHealth;

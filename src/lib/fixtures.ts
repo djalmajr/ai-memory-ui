@@ -8,7 +8,7 @@ import type {
   ProjectKey,
   ProjectSummary,
   SearchHit,
-  WorkspaceExtras,
+  WorkspaceOverview,
   WorkspaceSummary,
 } from "~/lib/types";
 
@@ -237,9 +237,9 @@ export function fixtureBriefing(key: ProjectKey): BriefingSnapshot {
   };
 }
 
-// Extras escopados a um projeto (handoff + briefing + saúde do projeto) —
+// Overview escopados a um projeto (handoff + briefing + saúde do projeto) —
 // só p/ o preview de fixtures.
-export function fixtureProjectExtras(key: ProjectKey): WorkspaceExtras {
+export function fixtureProjectOverview(key: ProjectKey): WorkspaceOverview {
   const pages = pagesFor(key.project);
   const last = pages[pages.length - 1];
   const orphanPages = last
@@ -272,9 +272,9 @@ export function fixtureProjectExtras(key: ProjectKey): WorkspaceExtras {
   };
 }
 
-// Extras do workspace overview que a API do ai-memory não expõe hoje
+// Overview do workspace overview que a API do ai-memory não expõe hoje
 // (handoff, briefing de workspace, saúde da memória) — só p/ o preview.
-export function fixtureWorkspaceExtras(workspace: string): WorkspaceExtras {
+export function fixtureWorkspaceOverview(workspace: string): WorkspaceOverview {
   if (workspace !== WS) {
     return {
       briefing: {

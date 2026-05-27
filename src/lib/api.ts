@@ -1,12 +1,12 @@
 import {
   fixtureBriefing,
   fixtureListPages,
-  fixtureProjectExtras,
+  fixtureProjectOverview,
   fixtureProjects,
   fixtureReadPage,
   fixtureRecent,
   fixtureSearch,
-  fixtureWorkspaceExtras,
+  fixtureWorkspaceOverview,
   fixtureWorkspaces,
 } from "~/lib/fixtures";
 import type {
@@ -17,7 +17,7 @@ import type {
   ProjectSummary,
   SearchScope,
   SearchHit,
-  WorkspaceExtras,
+  WorkspaceOverview,
   WorkspaceSummary,
 } from "~/lib/types";
 
@@ -86,24 +86,24 @@ export function listWorkspaces(): Promise<WorkspaceSummary[]> {
 }
 
 // Handoff + briefing de workspace + saúde da memória, via
-// GET /api/v1/workspaces/{workspace}/extras (fork ai-memory). Em um backend
+// GET /api/v1/workspaces/{workspace}/overview (fork ai-memory). Em um backend
 // sem esse endpoint, degrada p/ null (as seções do overview somem).
-export function workspaceExtras(workspace: string): Promise<WorkspaceExtras | null> {
+export function workspaceOverview(workspace: string): Promise<WorkspaceOverview | null> {
   if (USE_FIXTURES) {
-    return Promise.resolve(fixtureWorkspaceExtras(workspace));
+    return Promise.resolve(fixtureWorkspaceOverview(workspace));
   }
-  return requestJson<WorkspaceExtras>(`/workspaces/${segment(workspace)}/extras`).catch(() => null);
+  return requestJson<WorkspaceOverview>(`/workspaces/${segment(workspace)}/overview`).catch(() => null);
 }
 
 // Handoff + briefing + saúde escopados a um projeto, via
-// GET /api/v1/workspaces/{ws}/projects/{proj}/extras (fork ai-memory). Em um
+// GET /api/v1/workspaces/{ws}/projects/{proj}/overview (fork ai-memory). Em um
 // backend sem esse endpoint, degrada p/ null (handoff/saúde do projeto somem).
-export function projectExtras(key: ProjectKey, limit = 8): Promise<WorkspaceExtras | null> {
+export function projectOverview(key: ProjectKey, limit = 8): Promise<WorkspaceOverview | null> {
   if (USE_FIXTURES) {
-    return Promise.resolve(fixtureProjectExtras(key));
+    return Promise.resolve(fixtureProjectOverview(key));
   }
-  return requestJson<WorkspaceExtras>(
-    `/workspaces/${segment(key.workspace)}/projects/${segment(key.project)}/extras?limit=${limit}`,
+  return requestJson<WorkspaceOverview>(
+    `/workspaces/${segment(key.workspace)}/projects/${segment(key.project)}/overview?limit=${limit}`,
   ).catch(() => null);
 }
 

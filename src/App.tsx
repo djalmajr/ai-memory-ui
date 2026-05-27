@@ -65,11 +65,11 @@ import {
   listPages,
   listProjects,
   listWorkspaces,
-  projectExtras,
+  projectOverview,
   readPage,
   recentPages,
   searchPages,
-  workspaceExtras,
+  workspaceOverview,
 } from "~/lib/api";
 import type {
   ApiPage,
@@ -81,7 +81,7 @@ import type {
   ProjectSummary,
   RelatedPage,
   SearchHit,
-  WorkspaceExtras,
+  WorkspaceOverview,
   WorkspaceHandoff,
   WorkspaceSummary,
 } from "~/lib/types";
@@ -271,40 +271,40 @@ function App(props: AppProps) {
     return workspacePages$.data ?? [];
   });
 
-  // Extras do workspace overview (handoff, briefing, saúde) — fixtures/degrada.
-  const workspaceExtras$ = useQuery<WorkspaceExtras | null>(() => {
+  // Overview do workspace overview (handoff, briefing, saúde) — fixtures/degrada.
+  const workspaceOverview$ = useQuery<WorkspaceOverview | null>(() => {
     const ws = selectedWorkspace();
     return {
       enabled: Boolean(ws) && isWorkspaceOnly(),
-      queryFn: () => (ws ? workspaceExtras(ws) : Promise.resolve(null)),
-      queryKey: ["workspace-extras", ws ?? ""],
+      queryFn: () => (ws ? workspaceOverview(ws) : Promise.resolve(null)),
+      queryKey: ["workspace-overview", ws ?? ""],
       staleTime: 15_000,
     };
   });
-  const workspaceExtrasData = createMemo(() => {
-    if (workspaceExtras$.isPending || workspaceExtras$.isError) {
+  const workspaceOverviewData = createMemo(() => {
+    if (workspaceOverview$.isPending || workspaceOverview$.isError) {
       return null;
     }
-    return workspaceExtras$.data ?? null;
+    return workspaceOverview$.data ?? null;
   });
 
-  // Extras do projeto (handoff, briefing e saúde escopados ao projeto) — só no
+  // Overview do projeto (handoff, briefing e saúde escopados ao projeto) — só no
   // overview de um projeto selecionado; degrada p/ null.
-  const projectExtras$ = useQuery<WorkspaceExtras | null>(() => {
+  const projectOverview$ = useQuery<WorkspaceOverview | null>(() => {
     const key = selectedKey();
     const enabled = Boolean(key) && !isWorkspaceOnly();
     return {
       enabled,
-      queryFn: () => (key ? projectExtras(key) : Promise.resolve(null)),
-      queryKey: ["project-extras", key?.workspace ?? "", key?.project ?? ""],
+      queryFn: () => (key ? projectOverview(key) : Promise.resolve(null)),
+      queryKey: ["project-overview", key?.workspace ?? "", key?.project ?? ""],
       staleTime: 15_000,
     };
   });
-  const projectExtrasData = createMemo(() => {
-    if (projectExtras$.isPending || projectExtras$.isError) {
+  const projectOverviewData = createMemo(() => {
+    if (projectOverview$.isPending || projectOverview$.isError) {
       return null;
     }
-    return projectExtras$.data ?? null;
+    return projectOverview$.data ?? null;
   });
 
   // Escopo "workspace" da busca = todos os projetos do workspace (via POST scopes).
@@ -558,8 +558,8 @@ function App(props: AppProps) {
           <div class="min-h-0 flex-1 overflow-y-auto">
             <OverviewPanel
               briefing={briefingData()}
-              extras={workspaceExtrasData()}
-              projectExtras={projectExtrasData()}
+              overview={workspaceOverviewData()}
+              projectOverview={projectOverviewData()}
               isWorkspace={isWorkspaceOnly()}
               onBack={() => (isWorkspaceOnly() ? goHome() : openWorkspace(selectedWorkspace() ?? ""))}
               onOpenDoc={(project, path) => {
@@ -972,16 +972,16 @@ function ViewSegmented(props: { onChange: (view: DocView) => void; view: DocView
 
 function ProjectOverviewBody(props: {
   briefing: BriefingSnapshot | null;
-  extras: WorkspaceExtras | null;
+  overview: WorkspaceOverview | null;
   onOpenDoc: (path: string) => void;
   recent: PageSummary[];
 }) {
-  // Project extras (when available) carry a project-scoped briefing; fall back
+  // Project overview (when available) carry a project-scoped briefing; fall back
   // to the standalone briefing query that also feeds the documents inspector.
-  const briefing = () => props.extras?.briefing ?? props.briefing;
+  const briefing = () => props.overview?.briefing ?? props.briefing;
   return (
     <div class="flex flex-col gap-6">
-      <Show when={props.extras?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
+      <Show when={props.overview?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] gap-5 max-lg:grid-cols-1">
         <section class="min-w-0 rounded-lg border bg-card p-1.5">
           <div class="mb-1 flex items-center gap-2 px-2 pt-1.5 text-sm font-semibold">
@@ -1020,11 +1020,11 @@ function ProjectOverviewBody(props: {
               fallback={<small class="text-xs text-muted-foreground">{t(() => m.palette_searching())}</small>}
               when={briefing()}
             >
-              {/* o handoff já aparece no card do topo quando há extras; evita duplicar o aviso */}
-              {(snapshot) => <BriefingView briefing={snapshot()} hidePendingHandoff={Boolean(props.extras?.handoff)} />}
+              {/* o handoff já aparece no card do topo quando há overview; evita duplicar o aviso */}
+              {(snapshot) => <BriefingView briefing={snapshot()} hidePendingHandoff={Boolean(props.overview?.handoff)} />}
             </Show>
           </div>
-          <Show when={props.extras?.health}>
+          <Show when={props.overview?.health}>
             {(health) => <HealthCard health={health()} onOpenDoc={(_project, path) => props.onOpenDoc(path)} />}
           </Show>
         </aside>
@@ -1204,7 +1204,7 @@ function HealthCard(props: { health: MemoryHealth; onOpenDoc: (project: string, 
 }
 
 function WorkspaceOverviewBody(props: {
-  extras: WorkspaceExtras | null;
+  overview: WorkspaceOverview | null;
   onOpenDoc: (project: string, path: string) => void;
   onOpenProject: (key: ProjectKey) => void;
   projects: ProjectSummary[];
@@ -1215,7 +1215,7 @@ function WorkspaceOverviewBody(props: {
   const recent = createMemo(() => workspaceRecentDocs(props.workspacePages));
   return (
     <div class="flex flex-col gap-6">
-      <Show when={props.extras?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
+      <Show when={props.overview?.handoff}>{(h) => <HandoffCard handoff={h()} />}</Show>
 
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] gap-5 max-lg:grid-cols-1">
         <div class="flex min-w-0 flex-col gap-6">
@@ -1286,7 +1286,7 @@ function WorkspaceOverviewBody(props: {
         </div>
 
         <aside class="flex min-w-0 flex-col gap-4">
-          <Show when={props.extras?.briefing}>
+          <Show when={props.overview?.briefing}>
             {(b) => (
               <div class="rounded-lg border bg-card p-4">
                 <div class="mb-3.5 flex items-center gap-2 text-sm font-semibold">
@@ -1297,7 +1297,7 @@ function WorkspaceOverviewBody(props: {
               </div>
             )}
           </Show>
-          <Show when={props.extras?.health}>
+          <Show when={props.overview?.health}>
             {(health) => <HealthCard health={health()} onOpenDoc={props.onOpenDoc} />}
           </Show>
         </aside>
@@ -1308,8 +1308,8 @@ function WorkspaceOverviewBody(props: {
 
 function OverviewPanel(props: {
   briefing: BriefingSnapshot | null;
-  extras: WorkspaceExtras | null;
-  projectExtras: WorkspaceExtras | null;
+  overview: WorkspaceOverview | null;
+  projectOverview: WorkspaceOverview | null;
   isWorkspace: boolean;
   onBack: () => void;
   onOpenDoc: (project: string, path: string) => void;
@@ -1361,7 +1361,7 @@ function OverviewPanel(props: {
         fallback={
           <ProjectOverviewBody
             briefing={props.briefing}
-            extras={props.projectExtras}
+            overview={props.projectOverview}
             onOpenDoc={(path) => props.onOpenDoc(props.project ?? "", path)}
             recent={props.recent}
           />
@@ -1369,7 +1369,7 @@ function OverviewPanel(props: {
         when={props.isWorkspace}
       >
         <WorkspaceOverviewBody
-          extras={props.extras}
+          overview={props.overview}
           onOpenDoc={props.onOpenDoc}
           onOpenProject={props.onOpenProject}
           projects={props.projects}
