@@ -12,7 +12,7 @@ test("home lista o workspace e a faixa de stats", async ({ page }) => {
   await expect(page.getByText(/API connected/i)).toBeVisible();
 });
 
-test("workspace overview renderiza os cards do /extras (handoff, briefing, health)", async ({
+test("workspace overview renderiza os cards do /overview (handoff, briefing, health)", async ({
   page,
 }) => {
   await page.goto("/web/projects/centralit");
