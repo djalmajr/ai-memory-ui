@@ -18,6 +18,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Globe,
   Hash,
   History,
   Layers,
@@ -53,7 +54,6 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 
 import { Button } from "~/components/button";
 import { Markdown, stripFrontmatter } from "~/components/markdown";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/select";
 import { Skeleton } from "~/components/skeleton";
 import { APP_NAME, APP_TAGLINE } from "~/lib/brand";
 import { history, recordVisit } from "~/lib/history";
@@ -90,7 +90,11 @@ import type {
   WorkspaceWithProjects,
 } from "~/lib/types";
 
-type SearchMode = "global" | "project" | "workspace";
+// Explicit search scope chosen via the cascader.
+type SearchTarget =
+  | { kind: "global" }
+  | { kind: "workspace"; workspace: string }
+  | { kind: "project"; workspace: string; project: string };
 
 interface AppRouteSelection {
   workspace: string | null;
@@ -134,10 +138,9 @@ function App(props: AppProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchDraft, setSearchDraft] = createSignal("");
-  const [searchMode, setSearchMode] = createSignal<SearchMode>("project");
+  const [searchTarget, setSearchTarget] = createSignal<SearchTarget>({ kind: "global" });
   const [submittedQuery, setSubmittedQuery] = createSignal("");
-  const [submittedSearchMode, setSubmittedSearchMode] = createSignal<SearchMode>("project");
-  const [submittedScopes, setSubmittedScopes] = createSignal<ProjectKey[]>([]);
+  const [submittedSearchTarget, setSubmittedSearchTarget] = createSignal<SearchTarget>({ kind: "global" });
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [treeFilter, setTreeFilter] = createSignal("");
 
@@ -324,25 +327,36 @@ function App(props: AppProps) {
     return projectOverview$.data ?? null;
   });
 
-  // Escopo "workspace" da busca = todos os projetos do workspace (via POST scopes).
-  const workspaceScopes = createMemo<ProjectKey[]>(() => workspaceProjects().map(keyOf));
+  // Expand a target into ({ key | scopes } + enabled) for searchPages.
+  // - `global`: no key, no scopes (server searches everything).
+  // - `workspace`: scopes = every project in that workspace (POST body).
+  // - `project`: key = { workspace, project } (GET param).
+  function targetParams(target: SearchTarget, wsList: WorkspaceWithProjects[]): {
+    key: ProjectKey | null;
+    scopes: ProjectKey[];
+  } {
+    if (target.kind === "project") return { key: { project: target.project, workspace: target.workspace }, scopes: [] };
+    if (target.kind === "workspace") {
+      const ws = wsList.find((w) => w.workspace_name === target.workspace);
+      return { key: null, scopes: ws?.projects.map(keyOf) ?? [] };
+    }
+    return { key: null, scopes: [] };
+  }
 
-  const submittedScopeIds = createMemo(() => submittedScopes().map(scopeId).join("|"));
   const search$ = useQuery<SearchHit[]>(() => {
     const term = submittedQuery();
-    const mode = submittedSearchMode();
-    const key = mode === "project" ? selectedKey() : null;
-    const scopes = mode === "workspace" ? submittedScopes() : [];
+    const target = submittedSearchTarget();
+    const { key, scopes } = targetParams(target, workspacesWithProjects());
     return {
-      enabled: term.length > 0 && (mode === "global" || Boolean(key) || scopes.length > 0),
+      enabled: term.length > 0 && (target.kind === "global" || Boolean(key) || scopes.length > 0),
       queryFn: () => searchPages(term, { key, scopes }),
       queryKey: [
         "search",
         term,
-        mode,
+        target.kind,
         key?.workspace ?? "all",
         key?.project ?? "all",
-        submittedScopeIds(),
+        scopes.map(scopeId).join("|"),
       ],
       staleTime: 15_000,
     };
@@ -442,17 +456,22 @@ function App(props: AppProps) {
   });
 
   function openPalette() {
-    // Em casa não há projeto → começa em escopo global.
-    if (isHome()) {
-      setSearchMode("global");
+    // Default target inferred from the current route: a project page →
+    // search inside that project; a workspace page → that workspace;
+    // home (or anything without context) → global.
+    const key = selectedKey();
+    if (key) {
+      setSearchTarget({ kind: "project", workspace: key.workspace, project: key.project });
+    } else {
+      const sel = props.routeSelection();
+      if (sel.workspace) setSearchTarget({ kind: "workspace", workspace: sel.workspace });
+      else setSearchTarget({ kind: "global" });
     }
     setPaletteOpen(true);
   }
 
   function submitSearch() {
-    const mode = searchMode();
-    setSubmittedSearchMode(mode);
-    setSubmittedScopes(mode === "workspace" ? workspaceScopes() : []);
+    setSubmittedSearchTarget(searchTarget());
     setSubmittedQuery(searchDraft().trim());
   }
 
@@ -744,11 +763,12 @@ function App(props: AppProps) {
       </Show>
       <CommandPalette
         loading={search$.isPending || search$.isFetching}
-        mode={searchMode()}
+        target={searchTarget()}
+        workspaces={workspacesWithProjects()}
         onClose={() => setPaletteOpen(false)}
         onInput={liveSearch}
-        onModeChange={(mode) => {
-          setSearchMode(mode);
+        onTargetChange={(target) => {
+          setSearchTarget(target);
           submitSearch();
         }}
         onSelect={selectHit}
@@ -1796,10 +1816,11 @@ function HomeScreen(props: {
 
 function CommandPalette(props: {
   loading: boolean;
-  mode: SearchMode;
+  target: SearchTarget;
+  workspaces: WorkspaceWithProjects[];
   onClose: () => void;
   onInput: (value: string) => void;
-  onModeChange: (mode: SearchMode) => void;
+  onTargetChange: (target: SearchTarget) => void;
   onSelect: (hit: SearchHit) => void;
   open: boolean;
   query: string;
@@ -1849,7 +1870,11 @@ function CommandPalette(props: {
           onClick={(event) => event.stopPropagation()}
         >
           <div class="flex items-center gap-2 border-b px-3 py-2.5">
-            <ScopeSelect mode={props.mode} onModeChange={props.onModeChange} />
+            <SearchScopeCascader
+              target={props.target}
+              workspaces={props.workspaces}
+              onTargetChange={props.onTargetChange}
+            />
             <Search class="shrink-0 text-muted-foreground" size={18} />
             <input
               ref={inputRef}
@@ -2187,10 +2212,13 @@ function frontmatterIcon(key: string) {
   }
 }
 
+// Returns the primitive items as strings IF every entry is primitive.
+// Returns null for non-arrays AND for arrays whose entries are objects —
+// those fall through to a richer renderer instead of stringifying to
+// "[object Object]".
 function frontmatterArray(value: unknown): string[] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
+  if (!Array.isArray(value)) return null;
+  if (value.some((item) => item !== null && typeof item === "object")) return null;
   return value.map((item) => (item == null ? "" : String(item))).filter((s) => s.length > 0);
 }
 
@@ -2213,6 +2241,32 @@ function FrontmatterValue(props: { name: string; value: unknown }) {
         const arr = frontmatterArray(value);
         if (arr) {
           return arr.length > 0 ? chips(arr) : <span class="text-sm text-muted-foreground">—</span>;
+        }
+        if (Array.isArray(value)) {
+          // Array of objects (e.g. `contributors`). Render each entry as a
+          // mini key:value table so the user can actually read the data.
+          return (
+            <ul class="flex flex-col gap-2">
+              <For each={value as Record<string, unknown>[]}>
+                {(entry) => (
+                  <li class="rounded-md border bg-muted/30 px-3 py-2">
+                    <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+                      <For each={Object.entries(entry ?? {})}>
+                        {([k, v]) => (
+                          <>
+                            <dt class="font-medium text-muted-foreground">{k}</dt>
+                            <dd class="min-w-0 break-words font-mono text-foreground/90">
+                              {v == null ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v)}
+                            </dd>
+                          </>
+                        )}
+                      </For>
+                    </dl>
+                  </li>
+                )}
+              </For>
+            </ul>
+          );
         }
         if (typeof value === "object") {
           return <span class="break-words font-mono text-xs text-foreground/80">{JSON.stringify(value)}</span>;
@@ -2341,33 +2395,147 @@ function ThemeToggle() {
   );
 }
 
-const SCOPE_OPTIONS: SearchMode[] = ["project", "workspace", "global"];
-function scopeLabel(mode: SearchMode): string {
-  if (mode === "project") {
-    return t(() => m.palette_scope_project());
-  }
-  if (mode === "workspace") {
-    return t(() => m.palette_scope_workspace());
-  }
-  return t(() => m.palette_scope_global());
+function scopeTriggerLabel(target: SearchTarget): string {
+  if (target.kind === "global") return t(() => m.palette_scope_global());
+  if (target.kind === "workspace") return target.workspace;
+  return `${target.workspace} / ${target.project}`;
 }
 
-// Escopo da busca como Select (solid-ui/Kobalte), à esquerda do input do ⌘K.
-function ScopeSelect(props: { mode: SearchMode; onModeChange: (mode: SearchMode) => void }) {
+// Search-scope picker: the same two-column cascader as the top-bar
+// workspace switcher, plus an explicit "Global" row at the top. Lets the
+// user pin the search to any workspace or project regardless of which
+// route they're currently on.
+function SearchScopeCascader(props: {
+  target: SearchTarget;
+  workspaces: WorkspaceWithProjects[];
+  onTargetChange: (target: SearchTarget) => void;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const [hoveredWs, setHoveredWs] = createSignal<string | null>(null);
+
+  const activeWorkspace = createMemo<string>(() => {
+    const hover = hoveredWs();
+    if (hover && props.workspaces.some((w) => w.workspace_name === hover)) return hover;
+    if (props.target.kind !== "global") {
+      const t = props.target;
+      if (props.workspaces.some((w) => w.workspace_name === t.workspace)) return t.workspace;
+    }
+    return props.workspaces[0]?.workspace_name ?? "";
+  });
+
+  const activeProjects = createMemo(
+    () => props.workspaces.find((w) => w.workspace_name === activeWorkspace())?.projects ?? [],
+  );
+
+  function pick(target: SearchTarget) {
+    setOpen(false);
+    props.onTargetChange(target);
+  }
+
   return (
-    <Select<SearchMode>
-      options={SCOPE_OPTIONS}
-      value={props.mode}
-      onChange={(value) => value && props.onModeChange(value)}
-      itemComponent={(itemProps) => (
-        <SelectItem item={itemProps.item}>{scopeLabel(itemProps.item.rawValue)}</SelectItem>
-      )}
-    >
-      <SelectTrigger aria-label="Escopo da busca" class="h-8 shrink-0 text-xs font-medium">
-        <SelectValue<SearchMode>>{(state) => scopeLabel(state.selectedOption())}</SelectValue>
-      </SelectTrigger>
-      <SelectContent />
-    </Select>
+    <PopoverPrimitive.Root open={open()} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger
+        as="button"
+        aria-label="Escopo da busca"
+        class="flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 text-xs font-medium outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
+        type="button"
+      >
+        <Show
+          fallback={<Globe class="shrink-0 text-primary" size={13} />}
+          when={props.target.kind !== "global"}
+        >
+          <Boxes class="shrink-0 text-primary" size={13} />
+        </Show>
+        <span class="max-w-[14rem] truncate">{scopeTriggerLabel(props.target)}</span>
+        <ChevronDown class="text-muted-foreground" size={13} />
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          class="z-[60] mt-1 w-[28rem] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0"
+          data-testid="search-scope-cascader-content"
+        >
+          {/* Global row — always available on top */}
+          <button
+            class="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+            classList={{ "bg-selected text-primary": props.target.kind === "global" }}
+            type="button"
+            onClick={() => pick({ kind: "global" })}
+          >
+            <Globe class="shrink-0 text-primary" size={15} />
+            <span class="flex-1 font-medium">{t(() => m.palette_scope_global())}</span>
+            <small class="text-xs text-muted-foreground">{t(() => m.palette_scope_global_hint())}</small>
+          </button>
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] divide-x">
+            {/* Left: workspaces (click = workspace-wide search) */}
+            <div class="max-h-72 overflow-y-auto p-1">
+              <For each={props.workspaces}>
+                {(ws) => (
+                  <button
+                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+                    classList={{
+                      "bg-selected text-primary":
+                        props.target.kind === "workspace" && props.target.workspace === ws.workspace_name,
+                      "bg-hover": activeWorkspace() === ws.workspace_name && !(
+                        props.target.kind === "workspace" && props.target.workspace === ws.workspace_name
+                      ),
+                    }}
+                    type="button"
+                    onMouseEnter={() => setHoveredWs(ws.workspace_name)}
+                    onClick={() => pick({ kind: "workspace", workspace: ws.workspace_name })}
+                  >
+                    <Boxes class="shrink-0 text-primary" size={15} />
+                    <span class="flex min-w-0 flex-1 flex-col">
+                      <strong class="truncate text-sm font-medium leading-tight">{ws.workspace_name}</strong>
+                      <small class="truncate text-xs text-muted-foreground">
+                        {t(() => m.home_ws_meta({ docs: ws.page_count, projects: ws.project_count }))}
+                      </small>
+                    </span>
+                    <Show when={ws.projects.length > 0}>
+                      <ChevronRight class="shrink-0 text-muted-foreground" size={14} />
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </div>
+            {/* Right: projects of the active workspace */}
+            <div class="max-h-72 overflow-y-auto p-1">
+              <Show
+                fallback={
+                  <p class="px-3 py-6 text-center text-xs text-muted-foreground">
+                    {t(() => m.cascader_no_projects())}
+                  </p>
+                }
+                when={activeProjects().length > 0}
+              >
+                <For each={activeProjects()}>
+                  {(project) => (
+                    <button
+                      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+                      classList={{
+                        "bg-selected text-primary":
+                          props.target.kind === "project" &&
+                          props.target.workspace === project.workspace_name &&
+                          props.target.project === project.project_name,
+                      }}
+                      type="button"
+                      onClick={() => pick({ kind: "project", workspace: project.workspace_name, project: project.project_name })}
+                    >
+                      <Box class="shrink-0 text-primary" size={15} />
+                      <span class="flex min-w-0 flex-1 flex-col">
+                        <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
+                        <small class="truncate text-xs text-muted-foreground">
+                          {t(() => m.count_pages({ count: project.page_count }))}
+                        </small>
+                      </span>
+                    </button>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 

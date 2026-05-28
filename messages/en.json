@@ -38,6 +38,7 @@
   "palette_scope_project": "Project",
   "palette_scope_workspace": "Workspace",
   "palette_scope_global": "Global",
+  "palette_scope_global_hint": "All workspaces",
   "palette_ready_title": "Ready",
   "palette_ready_body": "FTS5 + vector search (RRF). Choose the scope above.",
   "palette_searching": "Searching…",
