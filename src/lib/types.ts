@@ -13,6 +13,14 @@ export interface WorkspaceSummary {
   current?: boolean;
 }
 
+/** A `WorkspaceSummary` with its `ProjectSummary[]` inline. Built by the
+ *  UI on demand from `listWorkspaces()` + `listProjects()` (no extra API
+ *  call needed). Used by the cascader switcher to render workspaces +
+ *  their projects in one shot with search. */
+export interface WorkspaceWithProjects extends WorkspaceSummary {
+  projects: ProjectSummary[];
+}
+
 export interface PageSummary {
   path: string;
   title: string;
