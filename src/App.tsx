@@ -976,31 +976,35 @@ function WorkspaceProjectCascader(props: {
     props.onSelectProject({ workspace, project });
   };
 
-  // Scrolling containers measured by each virtualizer. Row heights match the
-  // current padded button (≈ 44px); overscan smooths fast scroll without
-  // measurable cost up to thousands of rows.
-  let workspacesScrollEl: HTMLDivElement | undefined;
-  let projectsScrollEl: HTMLDivElement | undefined;
-  let hitsScrollEl: HTMLDivElement | undefined;
+  // Scrolling containers measured by each virtualizer.
+  // - Refs are SIGNALS, not `let`-vars: Kobalte's Popover mounts content
+  //   only when open, so the element appears post-mount; without a signal
+  //   Solid can't notify the virtualizer that the scroll element exists.
+  // - `count` is a getter property — `count: arr.length` is evaluated once
+  //   at createVirtualizer() call and frozen; getters keep it reactive.
+  // Row heights match the padded button (~44px).
+  const [workspacesScrollEl, setWorkspacesScrollEl] = createSignal<HTMLDivElement | null>(null);
+  const [projectsScrollEl, setProjectsScrollEl] = createSignal<HTMLDivElement | null>(null);
+  const [hitsScrollEl, setHitsScrollEl] = createSignal<HTMLDivElement | null>(null);
   const ROW_PX = 44;
   const OVERSCAN = 6;
 
   const workspacesVirtualizer = createVirtualizer({
-    count: props.workspaces.length,
+    get count() { return props.workspaces.length; },
     estimateSize: () => ROW_PX,
-    getScrollElement: () => workspacesScrollEl ?? null,
+    getScrollElement: () => workspacesScrollEl(),
     overscan: OVERSCAN,
   });
   const projectsVirtualizer = createVirtualizer({
-    count: activeProjects().length,
+    get count() { return activeProjects().length; },
     estimateSize: () => ROW_PX,
-    getScrollElement: () => projectsScrollEl ?? null,
+    getScrollElement: () => projectsScrollEl(),
     overscan: OVERSCAN,
   });
   const hitsVirtualizer = createVirtualizer({
-    count: searchHits().length,
+    get count() { return searchHits().length; },
     estimateSize: () => ROW_PX,
-    getScrollElement: () => hitsScrollEl ?? null,
+    getScrollElement: () => hitsScrollEl(),
     overscan: OVERSCAN,
   });
 
@@ -1052,7 +1056,7 @@ function WorkspaceProjectCascader(props: {
               }
               when={searchHits().length > 0}
             >
-              <div ref={hitsScrollEl} class="h-80 overflow-y-auto p-1">
+              <div ref={setHitsScrollEl} class="h-80 overflow-y-auto p-1">
                 <div style={{ height: `${hitsVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                   <For each={hitsVirtualizer.getVirtualItems()}>
                     {(vItem) => {
@@ -1099,7 +1103,7 @@ function WorkspaceProjectCascader(props: {
           <Show when={!searchTerm().trim()}>
             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] divide-x">
               {/* Left: workspaces (virtualized) */}
-              <div ref={workspacesScrollEl} class="h-80 overflow-y-auto p-1">
+              <div ref={setWorkspacesScrollEl} class="h-80 overflow-y-auto p-1">
                 <div style={{ height: `${workspacesVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                   <For each={workspacesVirtualizer.getVirtualItems()}>
                     {(vItem) => {
@@ -1134,7 +1138,7 @@ function WorkspaceProjectCascader(props: {
                 </div>
               </div>
               {/* Right: projects of the active workspace (virtualized) */}
-              <div ref={projectsScrollEl} class="h-80 overflow-y-auto p-1">
+              <div ref={setProjectsScrollEl} class="h-80 overflow-y-auto p-1">
                 <Show
                   fallback={
                     <p class="px-3 py-6 text-center text-xs text-muted-foreground">
