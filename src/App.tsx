@@ -49,6 +49,7 @@ import {
 } from "solid-js";
 
 import * as PopoverPrimitive from "@kobalte/core/popover";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 
 import { Button } from "~/components/button";
 import { Markdown, stripFrontmatter } from "~/components/markdown";
@@ -907,7 +908,21 @@ function WorkspaceProjectCascader(props: {
   workspaces: WorkspaceWithProjects[];
 }) {
   const [open, setOpen] = createSignal(false);
+  // `query`        — controlled input value (instant typing feedback).
+  // `searchTerm`   — debounced 200ms; what the filter actually reads.
+  // Decouples typing latency from filter cost (matters at thousands of items).
   const [query, setQuery] = createSignal("");
+  const [searchTerm, setSearchTerm] = createSignal("");
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const handleQuery = (value: string) => {
+    setQuery(value);
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => setSearchTerm(value), 200);
+  };
+  onCleanup(() => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+  });
+
   const [hoveredWs, setHoveredWs] = createSignal<string | null>(null);
 
   // The workspace highlighted in the right column. Defaults to currentWorkspace,
@@ -921,12 +936,17 @@ function WorkspaceProjectCascader(props: {
     return props.workspaces[0]?.workspace_name ?? "";
   });
 
+  const activeProjects = createMemo(
+    () => props.workspaces.find((w) => w.workspace_name === activeWorkspace())?.projects ?? [],
+  );
+
   // When searching, flatten into a single ranked list of "ws / project" pairs.
   // Empty project_name represents a workspace row (so workspace-only matches
-  // are reachable too).
+  // are reachable too). Slice cap protects render from runaway queries — at
+  // the virtualization-friendly tier (1k+) the user should narrow further.
   type Hit = { workspace: string; project: string | null; pageCount: number };
   const searchHits = createMemo<Hit[]>(() => {
-    const q = query().trim().toLowerCase();
+    const q = searchTerm().trim().toLowerCase();
     if (!q) return [];
     const out: Hit[] = [];
     for (const ws of props.workspaces) {
@@ -937,13 +957,15 @@ function WorkspaceProjectCascader(props: {
           out.push({ pageCount: p.page_count, project: p.project_name, workspace: ws.workspace_name });
         }
       }
+      if (out.length >= 500) break;
     }
-    return out.slice(0, 50);
+    return out.slice(0, 500);
   });
 
   const close = () => {
     setOpen(false);
     setQuery("");
+    setSearchTerm("");
   };
   const pickWorkspace = (workspace: string) => {
     close();
@@ -953,6 +975,34 @@ function WorkspaceProjectCascader(props: {
     close();
     props.onSelectProject({ workspace, project });
   };
+
+  // Scrolling containers measured by each virtualizer. Row heights match the
+  // current padded button (≈ 44px); overscan smooths fast scroll without
+  // measurable cost up to thousands of rows.
+  let workspacesScrollEl: HTMLDivElement | undefined;
+  let projectsScrollEl: HTMLDivElement | undefined;
+  let hitsScrollEl: HTMLDivElement | undefined;
+  const ROW_PX = 44;
+  const OVERSCAN = 6;
+
+  const workspacesVirtualizer = createVirtualizer({
+    count: props.workspaces.length,
+    estimateSize: () => ROW_PX,
+    getScrollElement: () => workspacesScrollEl ?? null,
+    overscan: OVERSCAN,
+  });
+  const projectsVirtualizer = createVirtualizer({
+    count: activeProjects().length,
+    estimateSize: () => ROW_PX,
+    getScrollElement: () => projectsScrollEl ?? null,
+    overscan: OVERSCAN,
+  });
+  const hitsVirtualizer = createVirtualizer({
+    count: searchHits().length,
+    estimateSize: () => ROW_PX,
+    getScrollElement: () => hitsScrollEl ?? null,
+    overscan: OVERSCAN,
+  });
 
   return (
     <PopoverPrimitive.Root open={open()} onOpenChange={setOpen}>
@@ -988,126 +1038,139 @@ function WorkspaceProjectCascader(props: {
                 placeholder={t(() => m.cascader_search_placeholder())}
                 type="text"
                 value={query()}
-                onInput={(e) => setQuery(e.currentTarget.value)}
+                onInput={(e) => handleQuery(e.currentTarget.value)}
               />
             </div>
           </div>
-          {/* Search hits view (flat list of ws / project paths) */}
-          <Show when={query().trim()}>
-            <div class="max-h-80 overflow-y-auto p-1">
-              <Show
-                fallback={
-                  <p class="px-3 py-6 text-center text-xs text-muted-foreground">
-                    {t(() => m.cascader_no_results())}
-                  </p>
-                }
-                when={searchHits().length > 0}
-              >
-                <For each={searchHits()}>
-                  {(hit) => (
-                    <button
-                      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                      type="button"
-                      onClick={() => {
-                        if (hit.project) pickProject(hit.workspace, hit.project);
-                        else pickWorkspace(hit.workspace);
-                      }}
-                    >
-                      <Show
-                        fallback={<Boxes class="shrink-0 text-primary" size={15} />}
-                        when={hit.project}
-                      >
-                        <Box class="shrink-0 text-primary" size={15} />
-                      </Show>
-                      <span class="flex min-w-0 flex-1 items-center gap-1 truncate">
-                        <HighlightMatch query={query()} text={hit.workspace} />
-                        <Show when={hit.project}>
-                          {(p) => (
-                            <>
-                              <span class="text-muted-foreground/50">/</span>
-                              <HighlightMatch query={query()} text={p()} />
-                            </>
-                          )}
-                        </Show>
-                      </span>
-                      <small class="shrink-0 text-xs text-muted-foreground">
-                        {t(() => m.count_pages({ count: hit.pageCount }))}
-                      </small>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </div>
+          {/* Search hits view (flat virtualized list) */}
+          <Show when={searchTerm().trim()}>
+            <Show
+              fallback={
+                <p class="px-3 py-6 text-center text-xs text-muted-foreground">
+                  {t(() => m.cascader_no_results())}
+                </p>
+              }
+              when={searchHits().length > 0}
+            >
+              <div ref={hitsScrollEl} class="h-80 overflow-y-auto p-1">
+                <div style={{ height: `${hitsVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
+                  <For each={hitsVirtualizer.getVirtualItems()}>
+                    {(vItem) => {
+                      const hit = searchHits()[vItem.index]!;
+                      return (
+                        <button
+                          class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+                          style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
+                          type="button"
+                          onClick={() => {
+                            if (hit.project) pickProject(hit.workspace, hit.project);
+                            else pickWorkspace(hit.workspace);
+                          }}
+                        >
+                          <Show
+                            fallback={<Boxes class="shrink-0 text-primary" size={15} />}
+                            when={hit.project}
+                          >
+                            <Box class="shrink-0 text-primary" size={15} />
+                          </Show>
+                          <span class="flex min-w-0 flex-1 items-center gap-1 truncate">
+                            <HighlightMatch query={searchTerm()} text={hit.workspace} />
+                            <Show when={hit.project}>
+                              {(p) => (
+                                <>
+                                  <span class="text-muted-foreground/50">/</span>
+                                  <HighlightMatch query={searchTerm()} text={p()} />
+                                </>
+                              )}
+                            </Show>
+                          </span>
+                          <small class="shrink-0 text-xs text-muted-foreground">
+                            {t(() => m.count_pages({ count: hit.pageCount }))}
+                          </small>
+                        </button>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
+            </Show>
           </Show>
           {/* Two-column cascader view (no active search) */}
-          <Show when={!query().trim()}>
+          <Show when={!searchTerm().trim()}>
             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] divide-x">
-              {/* Left: workspaces */}
-              <div class="max-h-80 overflow-y-auto p-1">
-                <For each={props.workspaces}>
-                  {(ws) => (
-                    <button
-                      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                      classList={{
-                        "bg-selected text-primary":
-                          activeWorkspace() === ws.workspace_name && props.currentProject === null,
-                        "bg-hover": activeWorkspace() === ws.workspace_name,
-                      }}
-                      type="button"
-                      onMouseEnter={() => setHoveredWs(ws.workspace_name)}
-                      onClick={() => pickWorkspace(ws.workspace_name)}
-                    >
-                      <Boxes class="shrink-0 text-primary" size={15} />
-                      <span class="flex min-w-0 flex-1 flex-col">
-                        <strong class="truncate text-sm font-medium leading-tight">{ws.workspace_name}</strong>
-                        <small class="truncate text-xs text-muted-foreground">
-                          {t(() => m.home_ws_meta({ docs: ws.page_count, projects: ws.project_count }))}
-                        </small>
-                      </span>
-                      <Show when={ws.projects.length > 0}>
-                        <ChevronRight class="shrink-0 text-muted-foreground" size={14} />
-                      </Show>
-                    </button>
-                  )}
-                </For>
+              {/* Left: workspaces (virtualized) */}
+              <div ref={workspacesScrollEl} class="h-80 overflow-y-auto p-1">
+                <div style={{ height: `${workspacesVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
+                  <For each={workspacesVirtualizer.getVirtualItems()}>
+                    {(vItem) => {
+                      const ws = props.workspaces[vItem.index]!;
+                      return (
+                        <button
+                          class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+                          classList={{
+                            "bg-selected text-primary":
+                              activeWorkspace() === ws.workspace_name && props.currentProject === null,
+                            "bg-hover": activeWorkspace() === ws.workspace_name,
+                          }}
+                          style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
+                          type="button"
+                          onMouseEnter={() => setHoveredWs(ws.workspace_name)}
+                          onClick={() => pickWorkspace(ws.workspace_name)}
+                        >
+                          <Boxes class="shrink-0 text-primary" size={15} />
+                          <span class="flex min-w-0 flex-1 flex-col">
+                            <strong class="truncate text-sm font-medium leading-tight">{ws.workspace_name}</strong>
+                            <small class="truncate text-xs text-muted-foreground">
+                              {t(() => m.home_ws_meta({ docs: ws.page_count, projects: ws.project_count }))}
+                            </small>
+                          </span>
+                          <Show when={ws.projects.length > 0}>
+                            <ChevronRight class="shrink-0 text-muted-foreground" size={14} />
+                          </Show>
+                        </button>
+                      );
+                    }}
+                  </For>
+                </div>
               </div>
-              {/* Right: projects of the active workspace */}
-              <div class="max-h-80 overflow-y-auto p-1">
-                <For
-                  each={
-                    props.workspaces.find((w) => w.workspace_name === activeWorkspace())?.projects ?? []
-                  }
-                >
-                  {(project) => (
-                    <button
-                      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                      classList={{
-                        "bg-selected text-primary":
-                          props.currentProject === project.project_name &&
-                          props.currentWorkspace === project.workspace_name,
-                      }}
-                      type="button"
-                      onClick={() => pickProject(project.workspace_name, project.project_name)}
-                    >
-                      <Box class="shrink-0 text-primary" size={15} />
-                      <span class="flex min-w-0 flex-1 flex-col">
-                        <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
-                        <small class="truncate text-xs text-muted-foreground">
-                          {t(() => m.count_pages({ count: project.page_count }))}
-                        </small>
-                      </span>
-                    </button>
-                  )}
-                </For>
+              {/* Right: projects of the active workspace (virtualized) */}
+              <div ref={projectsScrollEl} class="h-80 overflow-y-auto p-1">
                 <Show
-                  when={
-                    (props.workspaces.find((w) => w.workspace_name === activeWorkspace())?.projects ?? [])
-                      .length === 0
+                  fallback={
+                    <p class="px-3 py-6 text-center text-xs text-muted-foreground">
+                      {t(() => m.cascader_no_projects())}
+                    </p>
                   }
+                  when={activeProjects().length > 0}
                 >
-                  <p class="px-3 py-6 text-center text-xs text-muted-foreground">
-                    {t(() => m.cascader_no_projects())}
-                  </p>
+                  <div style={{ height: `${projectsVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
+                    <For each={projectsVirtualizer.getVirtualItems()}>
+                      {(vItem) => {
+                        const project = activeProjects()[vItem.index]!;
+                        return (
+                          <button
+                            class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+                            classList={{
+                              "bg-selected text-primary":
+                                props.currentProject === project.project_name &&
+                                props.currentWorkspace === project.workspace_name,
+                            }}
+                            style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
+                            type="button"
+                            onClick={() => pickProject(project.workspace_name, project.project_name)}
+                          >
+                            <Box class="shrink-0 text-primary" size={15} />
+                            <span class="flex min-w-0 flex-1 flex-col">
+                              <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
+                              <small class="truncate text-xs text-muted-foreground">
+                                {t(() => m.count_pages({ count: project.page_count }))}
+                              </small>
+                            </span>
+                          </button>
+                        );
+                      }}
+                    </For>
+                  </div>
                 </Show>
               </div>
             </div>
