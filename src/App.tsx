@@ -1150,24 +1150,30 @@ function WorkspaceProjectCascader(props: {
                   <div style={{ height: `${projectsVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                     <For each={projectsVirtualizer.getVirtualItems()}>
                       {(vItem) => {
-                        const project = activeProjects()[vItem.index]!;
+                        // Memo so the data binding tracks `activeProjects()`.
+                        // `<For>` doesn't re-run the callback when virtual items
+                        // keep the same identity (same count + scroll), so a
+                        // direct read here would freeze on the previous
+                        // workspace's projects when hover switches between two
+                        // same-sized workspaces.
+                        const project = createMemo(() => activeProjects()[vItem.index]!);
                         return (
                           <button
                             class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
                             classList={{
                               "bg-selected text-primary":
-                                props.currentProject === project.project_name &&
-                                props.currentWorkspace === project.workspace_name,
+                                props.currentProject === project().project_name &&
+                                props.currentWorkspace === project().workspace_name,
                             }}
                             style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
                             type="button"
-                            onClick={() => pickProject(project.workspace_name, project.project_name)}
+                            onClick={() => pickProject(project().workspace_name, project().project_name)}
                           >
                             <Box class="shrink-0 text-primary" size={15} />
                             <span class="flex min-w-0 flex-1 flex-col">
-                              <strong class="truncate text-sm font-medium leading-tight">{project.project_name}</strong>
+                              <strong class="truncate text-sm font-medium leading-tight">{project().project_name}</strong>
                               <small class="truncate text-xs text-muted-foreground">
-                                {t(() => m.count_pages({ count: project.page_count }))}
+                                {t(() => m.count_pages({ count: project().page_count }))}
                               </small>
                             </span>
                           </button>
