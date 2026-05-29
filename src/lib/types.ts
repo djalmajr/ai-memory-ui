@@ -134,3 +134,18 @@ export interface WorkspaceOverview {
   briefing: BriefingSnapshot;
   health: MemoryHealth;
 }
+
+// GET /api/v1/graph — one resolved link whose endpoints are in different
+// projects. The cross-project dependency edges.
+export interface CrossProjectEdge {
+  from_workspace: string;
+  from_project: string;
+  from_path: string;
+  to_workspace: string;
+  to_project: string;
+  to_path: string;
+}
+
+export interface GraphResponse {
+  edges: CrossProjectEdge[];
+}

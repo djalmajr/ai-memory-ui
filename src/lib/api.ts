@@ -12,6 +12,8 @@ import {
 import type {
   ApiPage,
   BriefingSnapshot,
+  CrossProjectEdge,
+  GraphResponse,
   PageSummary,
   ProjectKey,
   ProjectSummary,
@@ -68,6 +70,27 @@ export function listProjects(): Promise<ProjectSummary[]> {
     return Promise.resolve(fixtureProjects);
   }
   return requestJson<ProjectSummary[]>("/projects");
+}
+
+// GET /api/v1/graph — resolved cross-project dependency edges (page→page,
+// each carrying both endpoints' workspace/project). The graph view
+// aggregates these into a project-level dependency graph.
+const FIXTURE_GRAPH_EDGES: CrossProjectEdge[] = [
+  {
+    from_workspace: "default",
+    from_project: "app",
+    from_path: "concepts/dep.md",
+    to_workspace: "default",
+    to_project: "infra",
+    to_path: "runbooks/02.md",
+  },
+];
+
+export function graph(): Promise<GraphResponse> {
+  if (USE_FIXTURES) {
+    return Promise.resolve({ edges: FIXTURE_GRAPH_EDGES });
+  }
+  return requestJson<GraphResponse>("/graph");
 }
 
 export function listProjectsForWorkspace(workspace: string): Promise<ProjectSummary[]> {
