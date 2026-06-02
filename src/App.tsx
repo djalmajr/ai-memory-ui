@@ -2089,6 +2089,25 @@ function FileTreeNodes(props: {
 }
 
 function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }) {
+  // Soft-nav for same-project wikilinks; cross-project links fall through to
+  // their href (full navigation), which already carries the correct basepath.
+  const handleWikilinkClick = (event: MouseEvent) => {
+    const anchor = (event.target as HTMLElement | null)?.closest?.("a.wikilink") as
+      | HTMLAnchorElement
+      | null;
+    if (!anchor) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return; // allow open-in-new-tab / new-window
+    }
+    const ws = anchor.dataset.ws;
+    const proj = anchor.dataset.proj;
+    const path = anchor.dataset.path;
+    if (!ws || !proj || path == null) return;
+    if (ws === props.page.workspace && proj === props.page.project) {
+      event.preventDefault();
+      props.onNavigate(path);
+    }
+  };
   return (
     <article class="min-w-0" data-testid="page-reader">
       <header class="border-b p-6">
@@ -2136,7 +2155,12 @@ function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }
         <Frontmatter frontmatter={props.page.frontmatter} />
       </Show>
       <div class="min-w-0 p-6">
-        <Markdown source={stripFrontmatter(props.page.body_markdown)} />
+        <Markdown
+          onClick={handleWikilinkClick}
+          project={props.page.project}
+          source={stripFrontmatter(props.page.body_markdown)}
+          workspace={props.page.workspace}
+        />
       </div>
       <Show when={props.page.links.length > 0 || props.page.backlinks.length > 0}>
         <footer class="grid gap-6 border-t p-6 sm:grid-cols-2" data-testid="page-relations">
