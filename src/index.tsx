@@ -16,8 +16,13 @@ const queryClient = new QueryClient({
     },
   },
 })
+// Derive the router basepath from the server-injected `<base href>`
+// (`document.baseURI`), e.g. `/wiki/web/` -> `/wiki/web`, `/web/` -> `/web`,
+// `/` -> undefined. Lets the SPA run under any AI_MEMORY_BASE_PATH / web slug
+// without a rebuild.
+const basepath = new URL(document.baseURI).pathname.replace(/\/+$/, '') || undefined
 const router = createRouter({
-  basepath: '/web',
+  basepath,
   defaultPreload: 'intent',
   routeTree,
   scrollRestoration: true,

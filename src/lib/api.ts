@@ -23,7 +23,21 @@ import type {
   WorkspaceSummary,
 } from "~/lib/types";
 
-const API_ROOT = "/api/v1";
+// `/api/v1` hangs off the server's base path (AI_MEMORY_BASE_PATH), not the
+// web mount, so we can't derive it from the `<base href>`. The server injects
+// `<meta name="ai-memory-base-path">` with that prefix (empty at the host
+// root); read it to build the API root. Empty => `/api/v1` (unchanged default).
+function readBasePath(): string {
+  if (typeof document === "undefined") return "";
+  return (
+    document
+      .querySelector('meta[name="ai-memory-base-path"]')
+      ?.getAttribute("content")
+      ?.replace(/\/+$/, "") ?? ""
+  );
+}
+
+const API_ROOT = `${readBasePath()}/api/v1`;
 
 // Modo de preview offline: `VITE_FIXTURES=1 npm run dev` serve dados de exemplo
 // (lib/fixtures.ts) sem precisar de um ai-memory rodando. Inerte em produção.
