@@ -6,7 +6,10 @@ import { defineConfig } from 'vite'
 import solid from 'vite-plugin-solid'
 
 export default defineConfig({
-  base: '/web/',
+  // Relative asset URLs: the server injects a `<base href>` (e.g. `/wiki/web/`
+  // or `/web/`) so the bundle resolves under any configured base path / web
+  // slug without a per-deployment rebuild. See ai-memory `--base-path`.
+  base: './',
   plugins: [
     tailwindcss(),
     // i18n via inlang Paraglide — compila messages/{locale}.json p/ src/paraglide.
