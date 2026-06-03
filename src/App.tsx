@@ -1828,6 +1828,7 @@ function CommandPalette(props: {
   submitted: string;
 }) {
   let inputRef: HTMLInputElement | undefined;
+  let resultsRef: HTMLDivElement | undefined;
   const [active, setActive] = createSignal(0);
 
   createEffect(() => {
@@ -1839,6 +1840,16 @@ function CommandPalette(props: {
   createEffect(() => {
     props.results;
     setActive(0);
+  });
+  // Cursor ativo mudou (teclado ↓/↑ ou hover) → garante que o item visado
+  // fique visível. Sem isso, a navegação por teclado podia "selecionar" itens
+  // fora do viewport e o usuário não via o highlight se mover.
+  createEffect(() => {
+    const idx = active();
+    const container = resultsRef;
+    if (!container || idx < 0) return;
+    const item = container.children[idx] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
   });
 
   function onKeyDown(event: KeyboardEvent) {
@@ -1918,7 +1929,7 @@ function CommandPalette(props: {
                 />
               </Match>
               <Match when={props.results.length > 0}>
-                <div class="flex flex-col gap-1" data-testid="palette-results">
+                <div ref={resultsRef} class="flex flex-col gap-1" data-testid="palette-results">
                   <For each={props.results}>
                     {(hit, index) => (
                       <button
