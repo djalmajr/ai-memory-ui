@@ -62,7 +62,7 @@ import type { VisitEntry } from "~/lib/history";
 import { locales, switchLocale, t, useLocale } from "~/lib/i18n";
 import type { Locale } from "~/lib/i18n";
 import { theme, toggleTheme } from "~/lib/theme";
-import { cn } from "~/lib/utils";
+import { cn, highlightSegments } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 import {
   briefing,
@@ -1259,25 +1259,7 @@ function WorkspaceProjectCascader(props: {
  *  match in a primary-color `<mark>` so the user can see WHY a result was
  *  ranked. Pure presentational helper used by `<WorkspaceProjectCascader>`. */
 function HighlightMatch(props: { query: string; text: string }) {
-  const segments = createMemo<Array<{ match: boolean; text: string }>>(() => {
-    const q = props.query.trim();
-    if (!q) return [{ match: false, text: props.text }];
-    const lower = props.text.toLowerCase();
-    const needle = q.toLowerCase();
-    const out: Array<{ match: boolean; text: string }> = [];
-    let i = 0;
-    while (i < props.text.length) {
-      const at = lower.indexOf(needle, i);
-      if (at === -1) {
-        out.push({ match: false, text: props.text.slice(i) });
-        break;
-      }
-      if (at > i) out.push({ match: false, text: props.text.slice(i, at) });
-      out.push({ match: true, text: props.text.slice(at, at + needle.length) });
-      i = at + needle.length;
-    }
-    return out;
-  });
+  const segments = createMemo(() => highlightSegments(props.query, props.text));
   return (
     <span class="truncate">
       <For each={segments()}>
