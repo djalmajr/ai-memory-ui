@@ -47,6 +47,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
 
 import * as PopoverPrimitive from "@kobalte/core/popover";
@@ -127,6 +128,13 @@ interface QueryState<T> {
 // Router), então signals locais seriam resetados. Em escopo de módulo eles
 // sobrevivem ao remount — é o que faz "selecionar projeto" surtir efeito.
 const [treeScope, setTreeScope] = createSignal<string | null>(null); // null = workspace inteiro
+// Posição de scroll do file-tree, preservada entre navegações de página. O
+// scrollTop é DOM (não signal) e zeraria ao re-renderizar/remontar na navegação;
+// em escopo de módulo o offset sobrevive e é restaurado na mesma árvore.
+const [treeScrollTop, setTreeScrollTop] = createSignal(0);
+// Identidade da árvore p/ qual o offset acima vale (workspace|escopo|filtro). Só
+// restauramos o scroll quando a árvore é a mesma; em outra árvore, começa no topo.
+const [treeScrollKey, setTreeScrollKey] = createSignal("");
 const [treeWidth, setTreeWidth] = createSignal(280);
 // Aba ativa da topbar (segmented): visão geral vs. file-tree (documentos).
 const [docView, setDocView] = createSignal<DocView>("overview");
@@ -524,6 +532,42 @@ function App(props: AppProps) {
     }
   });
 
+  // Preserva a posição do scroll do file-tree ao trocar de página. Salvamos o
+  // offset no scroll do usuário e restauramos após cada navegação (rAF p/ rodar
+  // depois de qualquer reset do container). Quando a ÁRVORE em si muda
+  // (workspace/projeto/escopo/filtro), começa no topo.
+  let treeScrollEl: HTMLDivElement | undefined;
+  const treeKey = () => `${selectedWorkspace() ?? ""}|${treeScope() ?? ""}|${treeFilter()}`;
+  const saveTreeScroll = () => {
+    if (treeScrollEl) {
+      setTreeScrollTop(treeScrollEl.scrollTop);
+      setTreeScrollKey(treeKey());
+    }
+  };
+  // O App remonta a cada navegação → o container do file-tree é recriado e o
+  // `ref` dispara no mount. Anexamos o listener de scroll DIRETO (Solid delega
+  // `onScroll`, mas `scroll` não borbulha → o handler delegado nunca dispara) e
+  // restauramos o offset salvo de forma síncrona quando a árvore é a mesma — sem
+  // rAF (que não roda em aba oculta; o conteúdo do tree já está no DOM no ref).
+  const mountTreeScroll = (el: HTMLDivElement) => {
+    treeScrollEl = el;
+    el.addEventListener("scroll", saveTreeScroll, { passive: true });
+  };
+  // Restaura o offset DEPOIS que o conteúdo da árvore renderiza — no mount o
+  // container ainda está vazio (scrollHeight 0; os dados do TanStack Query
+  // chegam depois do ref). Um efeito que reage à árvore roda pós-render e
+  // independe de rAF (que não dispara em aba oculta). `void scrollHeight` força
+  // o layout antes do set p/ não clampar.
+  createEffect(() => {
+    const forest = treeForest();
+    selectedPath();
+    const el = treeScrollEl;
+    if (!el || forest.length === 0) return;
+    const top = untrack(treeScrollKey) === treeKey() ? untrack(treeScrollTop) : 0;
+    void el.scrollHeight;
+    el.scrollTop = top;
+  });
+
   return (
     <div class="flex h-screen min-h-0 flex-col bg-background text-foreground">
       <Show when={isHome()}>
@@ -643,7 +687,7 @@ function App(props: AppProps) {
                 </Show>
               </div>
             </div>
-            <div class="min-h-0 flex-1 overflow-y-auto p-2">
+            <div ref={mountTreeScroll} class="min-h-0 flex-1 overflow-y-auto p-2">
               <Show
                 fallback={
                   <EmptyState
@@ -1953,7 +1997,8 @@ function CommandPalette(props: {
                           </span>
                         </span>
                         <small class="truncate text-xs text-muted-foreground">
-                          {hit.workspace}/{hit.project} · {hit.path}
+                          {hit.workspace}/{hit.project} ·{" "}
+                          <HighlightMatch query={props.submitted} text={hit.path} />
                         </small>
                         <p class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                           {renderSnippet(hit.snippet)}
