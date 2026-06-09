@@ -39,6 +39,33 @@ function readBasePath(): string {
 
 const API_ROOT = `${readBasePath()}/api/v1`;
 
+// URL de logout da web. Limpa a sessão do oauth2-proxy (`/oauth2/sign_out`) e
+// encadeia o RP-initiated logout do IdP (end-session do Keycloak) pra encerrar
+// também a sessão SSO — senão o próximo acesso re-loga em silêncio. O issuer é
+// descoberto em runtime via metadata RFC 9728 (`/.well-known/oauth-protected-resource`),
+// então a SPA (imagem compartilhada) fica correta por instância sem embutir
+// nenhuma URL de Keycloak. Em falha de descoberta, cai pro sign_out só do app.
+export async function buildLogoutUrl(): Promise<string> {
+  const base = readBasePath();
+  const signOut = `${base}/oauth2/sign_out`;
+  try {
+    const meta = await fetch(`${base}/.well-known/oauth-protected-resource`, {
+      headers: { accept: "application/json" },
+    }).then((r) => (r.ok ? r.json() : null));
+    const issuer = meta?.authorization_servers?.[0];
+    if (typeof issuer === "string" && issuer) {
+      const post = `${window.location.origin}${base}/web/`;
+      const idp =
+        `${issuer.replace(/\/+$/, "")}/protocol/openid-connect/logout` +
+        `?client_id=oauth2-proxy&post_logout_redirect_uri=${encodeURIComponent(post)}`;
+      return `${signOut}?rd=${encodeURIComponent(idp)}`;
+    }
+  } catch {
+    /* descoberta falhou — usa o sign_out só do app abaixo */
+  }
+  return signOut;
+}
+
 // Modo de preview offline: `VITE_FIXTURES=1 npm run dev` serve dados de exemplo
 // (lib/fixtures.ts) sem precisar de um ai-memory rodando. Inerte em produção.
 const USE_FIXTURES = import.meta.env.DEV && import.meta.env.VITE_FIXTURES === "1";

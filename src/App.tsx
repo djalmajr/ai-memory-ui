@@ -27,6 +27,7 @@ import {
   List,
   ListTree,
   Loader2,
+  LogOut,
   Moon,
   Search,
   ShieldCheck,
@@ -66,6 +67,7 @@ import { cn, highlightSegments } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 import {
   briefing,
+  buildLogoutUrl,
   listPages,
   listProjects,
   listWorkspaces,
@@ -945,12 +947,35 @@ function LanguageSwitcher() {
 }
 
 function Avatar() {
+  const [open, setOpen] = createSignal(false);
+  const doLogout = async () => {
+    setOpen(false);
+    window.location.assign(await buildLogoutUrl());
+  };
   return (
-    <div
-      class="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-primary"
-      title="djalmajr"
-    >
-      DJ
+    <div class="relative">
+      <button
+        aria-label="Conta"
+        class="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-primary outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+        title="djalmajr"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+      >
+        DJ
+      </button>
+      <Show when={open()}>
+        <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+        <div class="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+          <button
+            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
+            type="button"
+            onClick={() => void doLogout()}
+          >
+            <LogOut class="shrink-0 text-muted-foreground" size={15} />
+            <span class="truncate">{t(() => m.logout())}</span>
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }

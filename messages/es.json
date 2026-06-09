@@ -1,5 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "logout": "Cerrar sesión",
   "search_placeholder": "Buscar en todos los docs…",
   "nav_home": "Inicio",
   "switcher_all_projects": "Todos los proyectos",
