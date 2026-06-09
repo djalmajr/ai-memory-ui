@@ -465,16 +465,24 @@ function App(props: AppProps) {
   });
 
   function openPalette() {
-    // Default target inferred from the current route: a project page →
-    // search inside that project; a workspace page → that workspace;
-    // home (or anything without context) → global.
-    const key = selectedKey();
-    if (key) {
-      setSearchTarget({ kind: "project", workspace: key.workspace, project: key.project });
+    // Escopo default = o contexto que o usuário está VENDO na árvore, não a
+    // rota crua. `treeScope()` é o projeto focado (null = workspace inteiro);
+    // `selectedWorkspace()` é o workspace atual. Regra:
+    //   - projeto focado  → busca no projeto;
+    //   - só workspace    → busca no workspace;
+    //   - sem contexto    → global.
+    // Por que treeScope e não a rota: abrir um doc pela busca faz
+    // setTreeScope(null) (mostra todos os projetos na árvore), mas a rota
+    // continua sendo a página daquele projeto. Usar a rota travaria a busca
+    // no projeto mesmo o usuário estando de volta ao nível do workspace.
+    const workspace = selectedWorkspace();
+    const project = treeScope();
+    if (workspace && project) {
+      setSearchTarget({ kind: "project", workspace, project });
+    } else if (workspace) {
+      setSearchTarget({ kind: "workspace", workspace });
     } else {
-      const sel = props.routeSelection();
-      if (sel.workspace) setSearchTarget({ kind: "workspace", workspace: sel.workspace });
-      else setSearchTarget({ kind: "global" });
+      setSearchTarget({ kind: "global" });
     }
     setPaletteOpen(true);
   }
