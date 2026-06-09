@@ -173,7 +173,8 @@ function App(props: AppProps) {
     if (projects$.isPending || projects$.isError) {
       return [];
     }
-    return projects$.data ?? [];
+    // Projetos em ordem alfabética (cascader/switcher). Cópia p/ não mutar o cache da query.
+    return [...(projects$.data ?? [])].sort((a, b) => a.project_name.localeCompare(b.project_name));
   });
 
   // Tree (workspace → projects) used by the cascader switcher. Built
@@ -2746,6 +2747,9 @@ function buildWorkspaceForest(entries: ProjectPages[], filter: string): TreeNode
       workspace: entry.workspace,
     });
   }
+  // Projetos (nós de topo) em ordem alfabética. A ordenação dentro de cada
+  // projeto (dirs→files) fica com sortTreeNode/buildPageNodes.
+  roots.sort((a, b) => a.name.localeCompare(b.name));
   return roots;
 }
 
