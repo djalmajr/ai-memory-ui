@@ -68,6 +68,7 @@ import * as m from "~/paraglide/messages";
 import {
   briefing,
   buildLogoutUrl,
+  fetchCurrentUser,
   listPages,
   listProjects,
   listWorkspaces,
@@ -76,6 +77,7 @@ import {
   recentPages,
   searchPages,
   workspaceOverview,
+  type CurrentUser,
 } from "~/lib/api";
 import type {
   ApiPage,
@@ -946,8 +948,41 @@ function LanguageSwitcher() {
   );
 }
 
+// Identidade do usuário logado (sessão oauth2-proxy), buscada UMA vez e
+// compartilhada entre as instâncias do Avatar (header + home). `undefined`
+// enquanto carrega; `null` quando não há sessão / backend sem oauth2-proxy.
+const [currentUser, setCurrentUser] = createSignal<CurrentUser | null | undefined>(undefined);
+let currentUserStarted = false;
+function ensureCurrentUser() {
+  if (currentUserStarted) return;
+  currentUserStarted = true;
+  void fetchCurrentUser().then(setCurrentUser);
+}
+
+function userDisplayName(user: CurrentUser | null | undefined): string {
+  if (!user) return "";
+  return user.preferredUsername || user.user || user.email || "";
+}
+
+// Iniciais (≤2 letras) do nome de exibição; ignora o domínio em e-mails.
+function userInitials(name: string): string {
+  const local = name.includes("@") ? name.slice(0, name.indexOf("@")) : name;
+  const parts = local.split(/[\s._+-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
 function Avatar() {
   const [open, setOpen] = createSignal(false);
+  onMount(ensureCurrentUser);
+  const name = () => userDisplayName(currentUser());
+  const initials = () => {
+    const user = currentUser();
+    if (user === undefined) return ""; // ainda carregando
+    const display = userDisplayName(user);
+    return display ? userInitials(display) : "?";
+  };
   const doLogout = async () => {
     setOpen(false);
     window.location.assign(await buildLogoutUrl());
@@ -955,17 +990,29 @@ function Avatar() {
   return (
     <div class="relative">
       <button
-        aria-label="Conta"
+        aria-label={name() || "Conta"}
         class="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-primary outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
-        title="djalmajr"
+        title={name() || undefined}
         type="button"
         onClick={() => setOpen((value) => !value)}
       >
-        DJ
+        {initials()}
       </button>
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div class="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+        <div class="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+          <Show when={name()}>
+            <div class="border-b px-2 py-1.5">
+              <p class="truncate text-sm font-medium" title={name()}>
+                {name()}
+              </p>
+              <Show when={currentUser()?.email && currentUser()?.email !== name()}>
+                <p class="truncate text-xs text-muted-foreground" title={currentUser()?.email}>
+                  {currentUser()?.email}
+                </p>
+              </Show>
+            </div>
+          </Show>
           <button
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
             type="button"
@@ -1765,6 +1812,7 @@ function HomeScreen(props: {
       <div class="absolute right-4 top-4 flex items-center gap-1.5">
         <LanguageSwitcher />
         <ThemeToggle />
+        <Avatar />
       </div>
       <div class="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-14">
         <div class="flex flex-col items-center gap-3 text-center">

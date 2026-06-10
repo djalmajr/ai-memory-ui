@@ -66,6 +66,33 @@ export async function buildLogoutUrl(): Promise<string> {
   return signOut;
 }
 
+// Identidade da sessão atual exposta pelo oauth2-proxy. O endpoint
+// `${basePath}/oauth2/userinfo` devolve a sessão em JSON
+// (`user`/`email`/`preferredUsername`/`groups`).
+export interface CurrentUser {
+  user?: string;
+  email?: string;
+  preferredUsername?: string;
+  groups?: string[];
+}
+
+// Busca o usuário logado via oauth2-proxy (`${basePath}/oauth2/userinfo`).
+// Same-origin → o cookie de sessão acompanha o request. Em sessão ausente/
+// expirada (401) ou backend sem oauth2-proxy, degrada para `null` (o avatar
+// cai num placeholder neutro em vez de identidade fixa).
+export async function fetchCurrentUser(): Promise<CurrentUser | null> {
+  const base = readBasePath();
+  try {
+    const response = await fetch(`${base}/oauth2/userinfo`, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as CurrentUser;
+  } catch {
+    return null;
+  }
+}
+
 // Modo de preview offline: `VITE_FIXTURES=1 npm run dev` serve dados de exemplo
 // (lib/fixtures.ts) sem precisar de um ai-memory rodando. Inerte em produção.
 const USE_FIXTURES = import.meta.env.DEV && import.meta.env.VITE_FIXTURES === "1";
