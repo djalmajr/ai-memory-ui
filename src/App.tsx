@@ -2285,6 +2285,7 @@ function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }
       <div class="min-w-0 p-6">
         <Markdown
           onClick={handleWikilinkClick}
+          pagePath={props.page.path}
           project={props.page.project}
           source={stripFrontmatter(props.page.body_markdown)}
           workspace={props.page.workspace}

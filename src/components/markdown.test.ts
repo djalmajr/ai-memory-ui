@@ -98,3 +98,38 @@ describe("renderMarkdown linkify", () => {
     expect(html).toContain('rel="noreferrer noopener"');
   });
 });
+
+describe("renderMarkdown relative `.md` links", () => {
+  const PAGE_ENV = { ...ENV, pagePath: "business/index.md" };
+
+  it("rewrites `./x.md` to the in-app route, resolved against the page dir", () => {
+    // Without this, the browser resolves `./rf001…` against the `<base href>`
+    // and lands on `/wiki/web/rf001-cadastro.md` (outside the project route).
+    const html = renderMarkdown("see [RF001](./rf001-cadastro.md)", PAGE_ENV);
+    expect(html).toContain('href="/projects/default/scratch/pages/business/rf001-cadastro.md"');
+    expect(html).toContain('class="wikilink"');
+    expect(html).toContain('data-path="business/rf001-cadastro.md"');
+    expect(html).toContain(">RF001</a>");
+  });
+
+  it("resolves `../` against the page dir", () => {
+    const html = renderMarkdown("[x](../notes/y.md)", PAGE_ENV);
+    expect(html).toContain('href="/projects/default/scratch/pages/notes/y.md"');
+  });
+
+  it("leaves external, non-`.md` and anchor links as plain hrefs", () => {
+    expect(renderMarkdown("[e](https://example.com)", PAGE_ENV)).toContain('href="https://example.com');
+    expect(renderMarkdown("[img](./pic.png)", PAGE_ENV)).toContain('href="./pic.png"');
+    const anchor = renderMarkdown("[a](#sec)", PAGE_ENV);
+    expect(anchor).toContain('href="#sec"');
+    expect(anchor).not.toContain('class="wikilink"');
+  });
+
+  it("does nothing without page context (href stays relative)", () => {
+    expect(renderMarkdown("[x](./y.md)", ENV)).toContain('href="./y.md"');
+  });
+
+  it("rejects traversal past the project root", () => {
+    expect(renderMarkdown("[x](../../etc/passwd.md)", PAGE_ENV)).toContain('href="../../etc/passwd.md"');
+  });
+});

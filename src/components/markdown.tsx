@@ -80,6 +80,9 @@ md.linkify.set({ fuzzyLink: false });
 interface WikiEnv {
   workspace?: string;
   project?: string;
+  /** Path da página sendo renderizada (ex.: `business/analise-escopo-rfs.md`).
+   *  Resolve links Markdown relativos `[texto](./outra.md)` contra o dir dela. */
+  pagePath?: string;
   /** Basepath do router (ex.: `/wiki/web`), derivado do `<base href>`. */
   basePath?: string;
 }
@@ -153,6 +156,60 @@ export function resolveWikilink(raw: string, env: WikiEnv): ResolvedWikilink | n
   return { href, label: explicitLabel || target, workspace, project, path };
 }
 
+/**
+ * Resolve um link Markdown **relativo** (`[t](./outra.md)`, `[t](../x/y.md)`)
+ * contra o diretório da página atual, virando rota in-app. Diferente de
+ * `resolveWikilink` (que é relativo à RAIZ do projeto): um `[texto](path)` do
+ * Markdown é relativo à página que o contém. Sem isto, o navegador resolve o
+ * href cru contra o `<base href>` (`/wiki/web/`) e cai em `/wiki/web/<arquivo>`
+ * — fora da rota do projeto. Retorna `null` (deixa o href cru) para links
+ * externos / absolutos / âncora, alvos não-`.md`, traversal além da raiz, ou
+ * sem contexto de página/escopo.
+ */
+export function resolveRelativeDocLink(href: string, env: WikiEnv): ResolvedWikilink | null {
+  if (!href) return null;
+  const lower = href.toLowerCase();
+  if (
+    href.startsWith("/") ||
+    href.startsWith("#") ||
+    href.includes("://") ||
+    lower.startsWith("mailto:") ||
+    lower.startsWith("tel:") ||
+    lower.startsWith("data:") ||
+    lower.startsWith("javascript:")
+  ) {
+    return null;
+  }
+  if (!env.pagePath || !env.workspace || !env.project) return null;
+
+  const pathPart = href.split(/[#?]/)[0] ?? "";
+  // Só reescreve links de PÁGINA (`.md`); imagens/assets relativos ficam crus.
+  if (!pathPart.toLowerCase().endsWith(".md") || pathPart.includes("\\")) return null;
+
+  // Resolve relativo ao diretório da página atual.
+  const pageDir = env.pagePath.includes("/")
+    ? env.pagePath.slice(0, env.pagePath.lastIndexOf("/"))
+    : "";
+  const segs = pageDir ? pageDir.split("/") : [];
+  for (const seg of pathPart.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (segs.length === 0) return null; // traversal além da raiz do projeto
+      segs.pop();
+      continue;
+    }
+    segs.push(seg);
+  }
+  const path = segs.join("/");
+  if (!path) return null;
+
+  const enc = encodeURIComponent;
+  const encPath = path.split("/").map(enc).join("/");
+  const base = env.basePath ?? "";
+  const routeHref = `${base}/projects/${enc(env.workspace)}/${enc(env.project)}/pages/${encPath}`;
+  return { href: routeHref, label: "", workspace: env.workspace, project: env.project, path };
+}
+
 // Regra inline: reescreve `[[…]]` em links de rota ANTES da regra `link`
 // (markdown-it consome `[` como link/ref). Carrega ws/proj/path em data-attrs
 // p/ o handler de clique fazer soft-nav; o href é fallback (nova aba / sem JS).
@@ -190,6 +247,20 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   if (/^https?:\/\//i.test(href)) {
     tokens[idx].attrSet("target", "_blank");
     tokens[idx].attrSet("rel", "noreferrer noopener");
+  } else {
+    // Links Markdown relativos `[t](./outra.md)` → rota in-app, resolvidos
+    // contra o dir da página. (Os `[[wikilinks]]` da regra inline acima já têm
+    // href absoluto começando com `/`, então `resolveRelativeDocLink` os ignora
+    // e não há reescrita dupla.) `class="wikilink"` + data-attrs fazem o mesmo
+    // soft-nav que os wikilinks (handler em PageReader).
+    const rel = resolveRelativeDocLink(href, (env as WikiEnv) ?? {});
+    if (rel) {
+      tokens[idx].attrSet("href", rel.href);
+      tokens[idx].attrSet("class", "wikilink");
+      tokens[idx].attrSet("data-ws", rel.workspace);
+      tokens[idx].attrSet("data-proj", rel.project);
+      tokens[idx].attrSet("data-path", rel.path);
+    }
   }
   return defaultLinkOpen(tokens, idx, options, env, self);
 };
@@ -230,6 +301,8 @@ export function Markdown(props: {
   /** Projeto da página atual — resolve wikilinks `[[path]]` sem escopo. */
   workspace?: string;
   project?: string;
+  /** Path da página — resolve links relativos `[t](./outra.md)`. */
+  pagePath?: string;
   /** Encaminhado ao container; usado p/ interceptar cliques em `a.wikilink`. */
   onClick?: (event: MouseEvent) => void;
 }) {
@@ -237,6 +310,7 @@ export function Markdown(props: {
     renderMarkdown(props.source ?? "", {
       workspace: props.workspace,
       project: props.project,
+      pagePath: props.pagePath,
       basePath: routerBasePath(),
     }),
   );
