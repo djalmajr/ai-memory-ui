@@ -69,6 +69,13 @@ const md: MarkdownIt = new MarkdownIt({
   typographer: true,
 });
 
+// Só linkifica URLs com esquema explícito (http/https/mailto/…). Sem isto, o
+// "fuzzy link" do linkify-it transforma qualquer token tipo-domínio em link
+// externo — ex.: um título "…Funcionais.md" virava `http://funcionais.md/`
+// (`.md` é TLD da Moldávia) e `foo.com` no texto idem. Wikis têm `.md`/nomes de
+// arquivo no corpo o tempo todo, então o fuzzy gera links externos falsos.
+md.linkify.set({ fuzzyLink: false });
+
 /** Contexto passado via `md.render(src, env)` para resolver wikilinks. */
 interface WikiEnv {
   workspace?: string;

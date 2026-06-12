@@ -79,3 +79,22 @@ describe("renderMarkdown wikilinks", () => {
     expect(renderMarkdown("[[../etc/passwd]]", ENV)).not.toContain("<a ");
   });
 });
+
+describe("renderMarkdown linkify", () => {
+  it("does not autolink bare domain-like text (e.g. a `.md` filename)", () => {
+    // `.md` is a valid ccTLD (Moldova); with linkify-it's fuzzyLink on, the
+    // renderer turned "Funcionais.md" into <a href="http://funcionais.md/">.
+    // Wikis carry .md filenames / domain-like words in prose constantly, so
+    // schema-less autolinking produces false external links.
+    const html = renderMarkdown("Requisitos Funcionais.md e veja foo.com depois", ENV);
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("Funcionais.md");
+  });
+
+  it("still linkifies explicit-scheme URLs and opens them in a new tab", () => {
+    const html = renderMarkdown("see https://example.com here", ENV);
+    expect(html).toContain('href="https://example.com');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer noopener"');
+  });
+});

@@ -2098,6 +2098,14 @@ function PaletteHint(props: { body: string; title: string }) {
   );
 }
 
+// Chave do estado de colapso de uma PASTA — qualificada por workspace+projeto.
+// O `path` de um nó `dir` é relativo ao projeto (ex.: `notes`), então pastas
+// homônimas em projetos diferentes (cada projeto tem seu `notes/`) colidiriam e
+// colapsariam/expandiriam juntas. Projeto+workspace no prefixo as torna únicas.
+function folderKey(node: TreeNode): string {
+  return `${node.workspace}/${node.project}/${node.path}`;
+}
+
 function FileTreeNodes(props: {
   depth: number;
   isFolderExpanded: (path: string) => boolean;
@@ -2118,7 +2126,7 @@ function FileTreeNodes(props: {
         const expanded = () =>
           node.type === "project"
             ? props.isProjectExpanded(node.name)
-            : props.isFolderExpanded(node.path);
+            : props.isFolderExpanded(folderKey(node));
         const selected = () =>
           node.type === "file" &&
           node.path === props.selectedPath &&
@@ -2162,7 +2170,7 @@ function FileTreeNodes(props: {
                 style={{ "padding-left": indent() }}
                 title={node.name}
                 type="button"
-                onClick={() => props.onToggleFolder(node.path)}
+                onClick={() => props.onToggleFolder(folderKey(node))}
               >
                 <span class="flex w-4 shrink-0 items-center justify-center">
                   <ChevronRight
