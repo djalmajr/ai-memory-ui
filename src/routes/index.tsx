@@ -1,11 +1,7 @@
 import { createFileRoute } from "@tanstack/solid-router";
 
-import App from "~/App";
-
-function HomeRoute() {
-  return <App routeSelection={() => ({ path: null, project: null, workspace: null })} />;
-}
+import { ServerOverviewScreen } from "~/screens/server-overview";
 
 export const Route = createFileRoute("/")({
-  component: HomeRoute,
+  component: ServerOverviewScreen,
 });
