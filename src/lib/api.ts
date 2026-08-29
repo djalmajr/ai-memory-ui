@@ -23,21 +23,8 @@ import type {
   WorkspaceSummary,
 } from "~/lib/types";
 
-// `/api/v1` hangs off the server's base path (AI_MEMORY_BASE_PATH), not the
-// web mount, so we can't derive it from the `<base href>`. The server injects
-// `<meta name="ai-memory-base-path">` with that prefix (empty at the host
-// root); read it to build the API root. Empty => `/api/v1` (unchanged default).
-function readBasePath(): string {
-  if (typeof document === "undefined") return "";
-  return (
-    document
-      .querySelector('meta[name="ai-memory-base-path"]')
-      ?.getAttribute("content")
-      ?.replace(/\/+$/, "") ?? ""
-  );
-}
-
-const API_ROOT = `${readBasePath()}/api/v1`;
+import { authHeaders } from "~/lib/auth";
+import { API_ROOT, readBasePath } from "~/lib/base-path";
 
 // URL de logout da web. Limpa a sessão do oauth2-proxy (`/oauth2/sign_out`) e
 // encadeia o RP-initiated logout do IdP (end-session do Keycloak) pra encerrar
@@ -97,7 +84,7 @@ export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 // (lib/fixtures.ts) sem precisar de um ai-memory rodando. Inerte em produção.
 const USE_FIXTURES = import.meta.env.DEV && import.meta.env.VITE_FIXTURES === "1";
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
 
   constructor(status: number, message: string) {
@@ -110,7 +97,10 @@ class ApiError extends Error {
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
-    headers: { Accept: "application/json", ...init?.headers },
+    // Bearer quando houver chave: `/api/v1` é read-only e ignora auth em
+    // engine sem token, mas num engine com auth é o que separa leitura
+    // pública de leitura atribuída (briefing/handoffs/sessions por dono).
+    headers: { Accept: "application/json", ...authHeaders(), ...init?.headers },
   });
 
   if (!response.ok) {
