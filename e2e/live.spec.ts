@@ -5,26 +5,30 @@ import { app } from "./app-path";
 // Smoke contra um engine ai-memory REAL. Opt-in: sem as variáveis abaixo a
 // suíte inteira é ignorada, então `npm run test:e2e` continua determinístico em
 // modo fixtures.
-//
 //   E2E_BASE_URL=http://127.0.0.1:49374/web \
-//   E2E_ADMIN_TOKEN=<bearer raiz> \
-//   E2E_USER_TOKEN=<token de usuário do banco, opcional> \
+//   E2E_BASIC_TOKEN=<bearer raiz que protege /web> \
+//   E2E_ADMIN_TOKEN=<chave que abre /admin e /keys> \
+//   E2E_USER_TOKEN=<chave de usuário, opcional> \
+//   E2E_SCOPE_PATH=/s/default/scratch \
 //   npx playwright test e2e/live.spec.ts
 //
 // Credenciais NUNCA ficam no arquivo: um bearer literal comitado vaza no
 // histórico do git e é descoberto pela suíte default sem ninguém pedir.
 const ADMIN_TOKEN = process.env.E2E_ADMIN_TOKEN ?? "";
+const BASIC_TOKEN = process.env.E2E_BASIC_TOKEN ?? ADMIN_TOKEN;
 const USER_TOKEN = process.env.E2E_USER_TOKEN ?? "";
+const SCOPE_PATH = process.env.E2E_SCOPE_PATH ?? "/s/default/scratch";
 
 // Num engine com auth, o próprio HTML do `/web` é protegido: o documento não
-// carrega bearer, então a navegação precisa do Basic (qualquer usuário + token
-// como senha) e o engine devolve o cookie de sessão para os GETs seguintes.
-test.use({ httpCredentials: { username: "ui", password: ADMIN_TOKEN } });
+// carrega bearer, então a navegação precisa do Basic (qualquer usuário + bearer
+// raiz como senha) e o engine devolve o cookie de sessão para os GETs seguintes.
+// O token administrativo pode ser uma chave de consumidor distinta.
+test.use({ httpCredentials: { username: "ui", password: BASIC_TOKEN } });
 
 test.describe("engine real", () => {
   test.skip(
-    !process.env.E2E_BASE_URL || !ADMIN_TOKEN,
-    "precisa de E2E_BASE_URL + E2E_ADMIN_TOKEN",
+    !process.env.E2E_BASE_URL || !ADMIN_TOKEN || !BASIC_TOKEN,
+    "precisa de E2E_BASE_URL + E2E_ADMIN_TOKEN + E2E_BASIC_TOKEN (ou fallback)",
   );
 
   test("admin vê contagens, workspaces e usuários reais", async ({ page }) => {
@@ -50,7 +54,7 @@ test.describe("engine real", () => {
       [ADMIN_TOKEN],
     );
 
-    await page.goto(app("/s/default/scratch"));
+    await page.goto(app(SCOPE_PATH));
     const firstPage = page.getByRole("link").filter({ hasText: ".md" }).first();
     await expect(firstPage).toBeVisible();
     await firstPage.click();
