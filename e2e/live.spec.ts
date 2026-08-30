@@ -6,7 +6,6 @@ import { app } from "./app-path";
 // suíte inteira é ignorada, então `npm run test:e2e` continua determinístico em
 // modo fixtures.
 //   E2E_BASE_URL=http://127.0.0.1:49374/web \
-//   E2E_BASIC_TOKEN=<bearer raiz que protege /web> \
 //   E2E_ADMIN_TOKEN=<chave que abre /admin e /keys> \
 //   E2E_USER_TOKEN=<chave de usuário, opcional> \
 //   E2E_SCOPE_PATH=/s/default/scratch \
@@ -15,20 +14,13 @@ import { app } from "./app-path";
 // Credenciais NUNCA ficam no arquivo: um bearer literal comitado vaza no
 // histórico do git e é descoberto pela suíte default sem ninguém pedir.
 const ADMIN_TOKEN = process.env.E2E_ADMIN_TOKEN ?? "";
-const BASIC_TOKEN = process.env.E2E_BASIC_TOKEN ?? ADMIN_TOKEN;
 const USER_TOKEN = process.env.E2E_USER_TOKEN ?? "";
 const SCOPE_PATH = process.env.E2E_SCOPE_PATH ?? "/s/default/scratch";
 
-// Num engine com auth, o próprio HTML do `/web` é protegido: o documento não
-// carrega bearer, então a navegação precisa do Basic (qualquer usuário + bearer
-// raiz como senha) e o engine devolve o cookie de sessão para os GETs seguintes.
-// O token administrativo pode ser uma chave de consumidor distinta.
-test.use({ httpCredentials: { username: "ui", password: BASIC_TOKEN } });
-
 test.describe("engine real", () => {
   test.skip(
-    !process.env.E2E_BASE_URL || !ADMIN_TOKEN || !BASIC_TOKEN,
-    "precisa de E2E_BASE_URL + E2E_ADMIN_TOKEN + E2E_BASIC_TOKEN (ou fallback)",
+    !process.env.E2E_BASE_URL || !ADMIN_TOKEN,
+    "precisa de E2E_BASE_URL + E2E_ADMIN_TOKEN",
   );
 
   test("admin vê contagens, workspaces e usuários reais", async ({ page }) => {
@@ -76,23 +68,14 @@ test.describe("engine real", () => {
     await expect(nav.getByText(/Administration|Administração/)).toHaveCount(0);
   });
 
-  // Sessão só-cookie (Basic no documento, SEM chave no localStorage): o engine
-  // lê o cookie apenas em GET, então as telas aparecem mas nenhuma execução
-  // pode ser oferecida — senão o botão só saberia responder 401.
-  test("sessão só-cookie vê as telas e não oferece mutação", async ({ page }) => {
+  test("sem chave vê o login prototipado", async ({ page }) => {
     await page.goto(app("/ops"));
 
-    // A tela existe (leitura autenticada pelo cookie).
-    await expect(page.getByRole("navigation")).toBeVisible();
-    await expect(page.getByText(/Backup/i).first()).toBeVisible();
-
-    // O aviso explica por que está travado, e todo botão de execução está off.
-    await expect(page.getByText(/cookie|chave de acesso|access key/i).first()).toBeVisible();
-    const runButtons = page.getByRole("button", { name: /^(Run|Executar|Ejecutar)$/ });
-    const total = await runButtons.count();
-    expect(total).toBeGreaterThan(0);
-    for (let index = 0; index < total; index += 1) {
-      await expect(runButtons.nth(index)).toBeDisabled();
-    }
+    await expect(page).toHaveURL(/\/login\/?$/);
+    await expect(
+      page.getByRole("heading", { name: /Access key|Chave de acesso|Clave de acceso/ }),
+    ).toBeVisible();
+    await expect(page.getByTestId("login-key")).toBeVisible();
+    await expect(page.getByTestId("login-submit")).toBeDisabled();
   });
 });
