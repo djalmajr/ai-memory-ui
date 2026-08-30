@@ -143,7 +143,7 @@
   "login_recovery_title": "Break-glass recovery",
   "login_recovery_desc": "Use the server recovery token to reset the root password.",
   "login_recovery_token_label": "Recovery token",
-  "login_recovery_token_placeholder": "Recovery token from server configuration",
+  "login_recovery_token_placeholder": "Paste the recovery token",
   "login_recovery_submit": "Reset password",
   "login_recovery_submitting": "Resetting password…",
   "login_recovery_back": "Back to sign in",

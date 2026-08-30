@@ -205,7 +205,7 @@ function AuthFrame() {
               </div>
               <div class="flex flex-col min-w-0">
                 <h1 class="truncate text-sm font-semibold">{titleText()}</h1>
-                <p class="truncate text-xs text-muted-foreground">{subtitleText()}</p>
+                <p class="text-xs leading-snug text-muted-foreground">{subtitleText()}</p>
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">
