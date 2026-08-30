@@ -1,14 +1,16 @@
 import { ApiError } from "~/lib/api";
-import { authHeaders } from "~/lib/auth";
+import { csrfHeaders } from "~/lib/auth";
 import { BASE_PATH } from "~/lib/base-path";
 import type {
   AdminProjectSummary,
   AdminUser,
   AgentSessionCount,
+  ApiCredential,
   Checkpoint,
   ClientActivityCount,
   CommitResult,
   ContaminationReport,
+  CreatedApiCredential,
   CuratorReport,
   DecisionOutcome,
   EmbedReport,
@@ -20,7 +22,7 @@ import type {
   ProposalSummary,
   StatusReport,
   SweepReport,
-  UserWithToken,
+  UserWithPassword,
 } from "~/lib/admin-types";
 
 // Cliente de `/admin/*`. Diferente de `/api/v1`, estas rotas penduram na raiz
@@ -33,11 +35,14 @@ import type {
 // Por isso o parser de erro tenta JSON e cai para texto, nunca o contrário.
 
 async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   const response = await fetch(`${BASE_PATH}/admin${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       Accept: "application/json",
-      ...authHeaders(),
+      ...(isMutation ? csrfHeaders() : {}),
       ...init?.headers,
     },
   });
@@ -184,7 +189,8 @@ export interface AuditEvent {
 export async function adminBackup(): Promise<{ blob: Blob; filename: string }> {
   const response = await fetch(`${BASE_PATH}/admin/backup`, {
     method: "POST",
-    headers: authHeaders(),
+    credentials: "include",
+    headers: csrfHeaders(),
   });
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response));
@@ -299,32 +305,71 @@ export function adminUsers(): Promise<AdminUser[]> {
   return adminRequest<{ users: AdminUser[] }>("/users").then((r) => r.users);
 }
 
-/** 200 (não 201) com o token em claro; é a única vez que ele aparece. */
+/** 200 com a senha temporária em claro gerada pelo servidor; revelada uma única vez. */
 export function adminCreateUser(input: {
   username: string;
   name?: string;
   email?: string;
-}): Promise<UserWithToken> {
-  return adminRequest<UserWithToken>("/users", json(input));
+  role?: "root" | "user";
+}): Promise<UserWithPassword> {
+  return adminRequest<UserWithPassword>("/users", json(input));
 }
 
-export function adminRotateUserToken(username: string): Promise<UserWithToken> {
-  return adminRequest<UserWithToken>(`/users/${encodeURIComponent(username)}/rotate-token`, {
+export function adminResetUserPassword(username: string): Promise<UserWithPassword> {
+  return adminRequest<UserWithPassword>(`/users/${encodeURIComponent(username)}/reset-password`, {
     method: "POST",
   });
 }
 
-/** 200 devolve `{ user }` envelopado (`UserResponse`), não o usuário cru. */
-export function adminExpireUser(username: string): Promise<AdminUser> {
-  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/expire`, {
+export function adminEnableUser(username: string): Promise<AdminUser> {
+  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/enable`, {
     method: "POST",
   }).then((r) => r.user);
 }
 
-export function adminReviveUser(username: string): Promise<AdminUser> {
-  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/revive`, {
+export function adminDisableUser(username: string): Promise<AdminUser> {
+  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/disable`, {
     method: "POST",
   }).then((r) => r.user);
+}
+
+export function adminUpdateUser(
+  username: string,
+  input: { name?: string | null; email?: string | null; role?: "root" | "user" },
+): Promise<AdminUser> {
+  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((r) => r.user);
+}
+
+/* ---------- credenciais programáticas nativas (aim_) ---------- */
+
+export function adminApiCredentials(): Promise<ApiCredential[]> {
+  return adminRequest<{ credentials: ApiCredential[] }>("/api-credentials").then(
+    (r) => r.credentials ?? [],
+  );
+}
+
+export function adminCreateApiCredential(input: {
+  username: string;
+  label: string;
+}): Promise<CreatedApiCredential> {
+  return adminRequest<CreatedApiCredential>("/api-credentials", json(input));
+}
+
+export function adminRotateApiCredential(id: string): Promise<CreatedApiCredential> {
+  return adminRequest<CreatedApiCredential>(
+    `/api-credentials/${encodeURIComponent(id)}/rotate`,
+    { method: "POST" },
+  );
+}
+
+export function adminRevokeApiCredential(id: string): Promise<void> {
+  return adminRequest<void>(`/api-credentials/${encodeURIComponent(id)}/revoke`, {
+    method: "POST",
+  });
 }
 
 /* ---------- páginas e escopos ---------- */

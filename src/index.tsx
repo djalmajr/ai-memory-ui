@@ -2,9 +2,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query'
 import { RouterProvider, createRouter } from '@tanstack/solid-router'
 import './index.css'
+import { clearLegacyCredential } from './lib/auth'
 import { Suspense } from 'solid-js'
 import { render } from 'solid-js/web'
 import { routeTree } from './routeTree.gen'
+
+clearLegacyCredential()
+
 
 const root = document.getElementById('root')
 const queryClient = new QueryClient({

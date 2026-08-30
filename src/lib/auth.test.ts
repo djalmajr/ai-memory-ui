@@ -1,263 +1,166 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import {
-  shouldRedirectToLogin,
-  authHeaders,
+  authMe,
   canManageUsers,
+  clearLegacyCredential,
   canMutate,
-  clearToken,
-  getToken,
+  changePassword,
+  csrfHeaders,
+  deriveTierFromAuthMe,
+  getCsrfToken,
   isAdminTier,
-  maskedToken,
-  probeTier,
-  setToken,
-  type Tier,
+  recovery,
+  shouldRedirectToLogin,
+  signIn,
+  signOut,
+  tier,
+  type AuthMe,
 } from "~/lib/auth";
 
-// O 401 do host vem como text/plain ("auth required\n"), então a sonda só pode
-// olhar o status — `json()` aqui rejeita de propósito, pra garantir que nenhum
-// caminho tente desserializar o corpo.
-function statusResponse(status: number): Response {
+function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return {
-    ok: status < 400,
+    ok: status >= 200 && status < 300,
     status,
-    statusText: "",
-    json: () => Promise.reject(new SyntaxError("401 body is text/plain")),
-    text: () => Promise.resolve("auth required\n"),
+    statusText: status === 200 ? "OK" : status === 401 ? "Unauthorized" : "Error",
+    headers: new Headers(headers),
+    json: () => Promise.resolve(data),
+    text: () => Promise.resolve(JSON.stringify(data)),
   } as unknown as Response;
 }
 
 let fetchMock: Mock;
+const rootCapabilities = {
+  normal_read: true,
+  normal_write: true,
+  admin: true,
+  user_management: true,
+};
+const userCapabilities = {
+  normal_read: true,
+  normal_write: true,
+  admin: false,
+  user_management: false,
+};
+const anonymousAdminCapabilities = {
+  normal_read: true,
+  normal_write: true,
+  admin: true,
+  user_management: false,
+};
+const anonymousReadCapabilities = {
+  normal_read: true,
+  normal_write: false,
+  admin: false,
+  user_management: false,
+};
+
 
 beforeEach(() => {
-  localStorage.clear();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  if (typeof document !== "undefined") {
+    document.cookie = "ai_memory_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+  }
+  localStorage.clear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
-});
-
-// Roteia por URL + header. A sonda usa três requests: /admin/status,
-// /api/v1/workspaces sem bearer, e /api/v1/workspaces com um bearer inválido
-// (discriminador de "auth configurada"). `junk` default = `read`, que é o que
-// um engine SEM auth faz: ignora o header e responde igual.
-function route(statuses: { admin: number; read: number; junk?: number }): void {
-  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-    const headers = (init?.headers ?? {}) as Record<string, string>;
-    const auth = headers.Authorization ?? "";
-    if (auth.includes("ai-memory-ui-probe-invalid")) {
-      return Promise.resolve(statusResponse(statuses.junk ?? statuses.read));
-    }
-    return Promise.resolve(
-      statusResponse(url.includes("/admin/status") ? statuses.admin : statuses.read),
-    );
-  });
-}
-
-describe("token no localStorage", () => {
-  it("guarda, lê e limpa", () => {
-    expect(getToken()).toBeNull();
-    setToken("  amk_abcdef  ");
-    expect(getToken()).toBe("amk_abcdef");
-    clearToken();
-    expect(getToken()).toBeNull();
-  });
-
-  it("trata chave em branco como ausente", () => {
-    localStorage.setItem("ai-memory-ui.token", "   ");
-    expect(getToken()).toBeNull();
-  });
-
-  it("só manda Authorization quando há chave", () => {
-    expect(authHeaders()).toEqual({});
-    setToken("amk_1");
-    expect(authHeaders()).toEqual({ Authorization: "Bearer amk_1" });
-  });
-
-  it("mascara a chave preservando os 4 últimos", () => {
-    expect(maskedToken()).toBeNull();
-    setToken("amk_0123456789abcd");
-    expect(maskedToken()).toBe("••••abcd");
-    setToken("ab");
-    expect(maskedToken()).toBe("••••");
-  });
-});
-
-describe("probeTier", () => {
-  const cases: {
-    name: string;
-    token: string | null;
-    admin: number;
-    read: number;
-    junk?: number;
-    expected: Tier;
-    tokenKept: boolean;
-  }[] = [
-    {
-      name: "chave aceita em /admin/status => admin",
-      token: "root",
-      admin: 200,
-      read: 200,
-      expected: "admin",
-      tokenKept: true,
-    },
-    {
-      name: "chave recusada no admin mas aceita na leitura => user",
-      token: "userkey",
-      admin: 403,
-      read: 200,
-      expected: "user",
-      tokenKept: true,
-    },
-    {
-      name: "chave recusada com 401 => unauthenticated e chave descartada",
-      token: "stale",
-      admin: 401,
-      read: 401,
-      expected: "unauthenticated",
-      tokenKept: false,
-    },
-    {
-      // Um 500 não é veredito sobre a credencial: descartá-la aqui perderia
-      // uma chave válida por causa de uma falha do servidor.
-      name: "engine com 500 => unreachable e chave preservada",
-      token: "good",
-      admin: 500,
-      read: 500,
-      expected: "unreachable",
-      tokenKept: true,
-    },
-    {
-      name: "403 inesperado na leitura => unreachable e chave preservada",
-      token: "good",
-      admin: 403,
-      read: 403,
-      expected: "unreachable",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, engine sem auth => anonymous-admin",
-      token: null,
-      admin: 200,
-      read: 200,
-      expected: "anonymous-admin",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, admin fechado => anonymous",
-      token: null,
-      admin: 401,
-      read: 200,
-      expected: "anonymous",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, leitura 401 => unauthenticated",
-      token: null,
-      admin: 401,
-      read: 401,
-      expected: "unauthenticated",
-      tokenKept: true,
-    },
-    {
-      // Leitura pública ok mas degrau admin indeterminado: assume fechado.
-      name: "sem chave, admin com 500 => anonymous",
-      token: null,
-      admin: 500,
-      read: 200,
-      expected: "anonymous",
-      tokenKept: true,
-    },
-    {
-      // Engine COM auth: o `/web` fica atrás dela, então chegar aqui já implica
-      // sessão autenticada por cookie. Chamar de anônimo seria mentira — e o
-      // cookie só vale em GET, daí um degrau próprio sem mutação.
-      name: "sem chave, auth configurada e cookie de operador => cookie-admin",
-      token: null,
-      admin: 200,
-      read: 200,
-      junk: 401,
-      expected: "cookie-admin",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, auth configurada e cookie de usuário do banco => user",
-      token: null,
-      admin: 403,
-      read: 200,
-      junk: 401,
-      expected: "user",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, auth configurada e nada autenticado => unauthenticated",
-      token: null,
-      admin: 401,
-      read: 401,
-      junk: 401,
-      expected: "unauthenticated",
-      tokenKept: true,
-    },
-    {
-      name: "sem chave, discriminador inalcançável => unreachable",
-      token: null,
-      admin: 200,
-      read: 200,
-      junk: 0,
-      expected: "unreachable",
-      tokenKept: true,
-    },
-  ];
-
-  for (const c of cases) {
-    it(c.name, async () => {
-      if (c.token) setToken(c.token);
-      route({ admin: c.admin, junk: c.junk, read: c.read });
-
-      expect(await probeTier()).toBe(c.expected);
-      expect(getToken()).toBe(c.token !== null && c.tokenKept ? c.token : null);
-    });
+  if (typeof document !== "undefined") {
+    document.cookie = "ai_memory_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
   }
+});
 
-  it("fetch estourando => unreachable, sem descartar a chave", async () => {
-    setToken("amk_valid");
-    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    expect(await probeTier()).toBe("unreachable");
-    expect(getToken()).toBe("amk_valid");
+describe("CSRF e segurança de cookie", () => {
+  it("extrai cookie CSRF legível", () => {
+    document.cookie = "ai_memory_csrf=test_csrf_secret_123; path=/";
+    expect(getCsrfToken()).toBe("test_csrf_secret_123");
+    expect(csrfHeaders()).toEqual({ "X-CSRF-Token": "test_csrf_secret_123" });
   });
 
-  it("manda Bearer na sonda quando há chave", async () => {
-    setToken("amk_probe");
-    route({ admin: 200, read: 200 });
-    await probeTier();
-    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<
-      string,
-      string
-    >;
-    expect(headers.Authorization).toBe("Bearer amk_probe");
+  it("retorna objeto vazio quando cookie CSRF está ausente", () => {
+    expect(getCsrfToken()).toBeNull();
+    expect(csrfHeaders()).toEqual({});
   });
 
-  // Sem chave, o único Authorization que a sonda envia é o bearer deliberadamente
-  // inválido do discriminador — nunca uma credencial real.
-  it("sem chave, só manda o bearer inválido do discriminador", async () => {
-    route({ admin: 401, read: 200 });
-    await probeTier();
+  it("limpa segredo legado ai-memory-ui.token no localStorage", () => {
+    localStorage.setItem("ai-memory-ui.token", "amk_antiga");
+    clearLegacyCredential();
+    expect(localStorage.getItem("ai-memory-ui.token")).toBeNull();
+  });
+});
 
-    const sent = fetchMock.mock.calls
-      .map((call) => ((call[1] as RequestInit).headers as Record<string, string>).Authorization)
-      .filter(Boolean);
+describe("derivação de tier a partir de auth/me", () => {
+  it("null => unauthenticated", () => {
+    expect(deriveTierFromAuthMe(null)).toBe("unauthenticated");
+  });
 
-    expect(sent).toEqual(["Bearer ai-memory-ui-probe-invalid"]);
+  it("must_change_password => must-change-password", () => {
+    const me: AuthMe = {
+      username: "root",
+      name: "Root",
+      role: "root",
+      must_change_password: true,
+      via: "session",
+      capabilities: rootCapabilities,
+    };
+    expect(deriveTierFromAuthMe(me)).toBe("must-change-password");
+  });
+
+  it("root com sessão => root", () => {
+    const me: AuthMe = {
+      username: "root",
+      name: "Root Operator",
+      role: "root",
+      must_change_password: false,
+      via: "session",
+      capabilities: rootCapabilities,
+    };
+    expect(deriveTierFromAuthMe(me)).toBe("root");
+  });
+
+  it("user com sessão => user", () => {
+    const me: AuthMe = {
+      username: "alice",
+      name: "Alice",
+      role: "user",
+      must_change_password: false,
+      via: "session",
+      capabilities: userCapabilities,
+    };
+    expect(deriveTierFromAuthMe(me)).toBe("user");
+  });
+
+  it("via anônima com Admin => anonymous-admin", () => {
+    const me: AuthMe = {
+      username: null,
+      name: null,
+      role: null,
+      must_change_password: false,
+      via: "anonymous",
+      capabilities: anonymousAdminCapabilities,
+    };
+    expect(deriveTierFromAuthMe(me)).toBe("anonymous-admin");
+  });
+
+  it("via anônima somente leitura => anonymous", () => {
+    const me: AuthMe = {
+      username: null,
+      name: null,
+      role: null,
+      must_change_password: false,
+      via: "anonymous",
+      capabilities: anonymousReadCapabilities,
+    };
+    expect(deriveTierFromAuthMe(me)).toBe("anonymous");
   });
 });
 
 describe("capacidades por tier", () => {
-  it("admin, cookie-admin e anonymous-admin veem a área administrativa", () => {
-    expect(isAdminTier("admin")).toBe(true);
-    expect(isAdminTier("cookie-admin")).toBe(true);
+  it("isAdminTier verdadeiro para root e anonymous-admin", () => {
+    expect(isAdminTier("root")).toBe(true);
     expect(isAdminTier("anonymous-admin")).toBe(true);
     expect(isAdminTier("user")).toBe(false);
     expect(isAdminTier("anonymous")).toBe(false);
@@ -265,54 +168,140 @@ describe("capacidades por tier", () => {
     expect(isAdminTier("unreachable")).toBe(false);
   });
 
-  // O engine só lê o cookie de sessão em GET: toda mutação exige o header
-  // Authorization. Oferecer purge/commit a uma sessão só-cookie seria oferecer
-  // um botão que só sabe responder 401.
-  it("sessão só-cookie enxerga mas não muta", () => {
-    expect(canMutate("admin")).toBe(true);
-    expect(canMutate("anonymous-admin")).toBe(true);
-    expect(canMutate("cookie-admin")).toBe(false);
-    expect(canMutate("user")).toBe(false);
-    expect(canMutate("anonymous")).toBe(false);
-    expect(canMutate("unauthenticated")).toBe(false);
-    expect(canMutate("unreachable")).toBe(false);
-  });
-
-  // UserManagement é root-only: nem modo anônimo nem sessão só-cookie chegam lá.
-  it("só o tier admin gerencia usuários", () => {
-    expect(canManageUsers("admin")).toBe(true);
-    expect(canManageUsers("cookie-admin")).toBe(false);
+  it("canManageUsers é exclusivo do root", () => {
+    expect(canManageUsers("root")).toBe(true);
     expect(canManageUsers("anonymous-admin")).toBe(false);
     expect(canManageUsers("user")).toBe(false);
+    expect(canManageUsers("anonymous")).toBe(false);
+    expect(canManageUsers("unauthenticated")).toBe(false);
+  });
+
+  it("canMutate permite sessões com cookie e CSRF", () => {
+    expect(canMutate("root")).toBe(true);
+    expect(canMutate("user")).toBe(true);
+    expect(canMutate("anonymous-admin")).toBe(true);
+    expect(canMutate("anonymous")).toBe(false);
+    expect(canMutate("unauthenticated")).toBe(false);
   });
 });
 
 describe("guard de rota protegida", () => {
-  // Só a recusa explícita (401) expulsa para o login. `unreachable` mantém a
-  // chave e a rota: um 5xx do engine não é motivo para deslogar ninguém.
-  const staying: Tier[] = ["admin", "anonymous-admin", "anonymous", "user", "unreachable"];
-  for (const current of staying) {
-    it(`${current} permanece na rota protegida`, () => {
-      expect(shouldRedirectToLogin(current, "/workspaces")).toBe(false);
-    });
-  }
-
-  it("unauthenticated em rota protegida vai para o login", () => {
-    expect(shouldRedirectToLogin("unauthenticated", "/workspaces")).toBe(true);
+  it("manda unauthenticated para o login a partir de rotas protegidas", () => {
     expect(shouldRedirectToLogin("unauthenticated", "/")).toBe(true);
-    expect(shouldRedirectToLogin("unauthenticated", "/s/default/scratch/pending")).toBe(true);
+    expect(shouldRedirectToLogin("unauthenticated", "/workspaces")).toBe(true);
+    expect(shouldRedirectToLogin("unauthenticated", "/s/default/scratch")).toBe(true);
   });
 
-  // Sem esta exceção o guard entraria em loop de navegação no próprio login.
-  it("unauthenticated já no login não redireciona", () => {
+  it("não entra em loop se já estiver no login", () => {
     expect(shouldRedirectToLogin("unauthenticated", "/login")).toBe(false);
     expect(shouldRedirectToLogin("unauthenticated", "/login/")).toBe(false);
   });
 
-  // A SPA pode ser servida sob um base path (`/web`), então o teste não pode
-  // assumir que o pathname começa em `/login`.
-  it("respeita base path no login", () => {
-    expect(shouldRedirectToLogin("unauthenticated", "/web/login")).toBe(false);
-    expect(shouldRedirectToLogin("unauthenticated", "/web/workspaces")).toBe(true);
+  it("must-change-password redireciona para o login (onde a troca é renderizada)", () => {
+    expect(shouldRedirectToLogin("must-change-password", "/")).toBe(true);
+    expect(shouldRedirectToLogin("must-change-password", "/login")).toBe(false);
+  });
+
+  it("root e user autenticados navegam normalmente", () => {
+    expect(shouldRedirectToLogin("root", "/")).toBe(false);
+    expect(shouldRedirectToLogin("root", "/users")).toBe(false);
+    expect(shouldRedirectToLogin("user", "/")).toBe(false);
+    expect(shouldRedirectToLogin("anonymous-admin", "/")).toBe(false);
+  });
+
+  it("unreachable preserva a tela para mostrar erro sem expulsar para o login", () => {
+    expect(shouldRedirectToLogin("unreachable", "/")).toBe(false);
+    expect(shouldRedirectToLogin("unreachable", "/workspaces")).toBe(false);
+  });
+});
+
+describe("operações de autenticação HTTP", () => {
+  it("signIn manda POST /auth/login com credentials=include", async () => {
+    const mockMe: AuthMe = {
+      username: "root",
+      name: "Root Operator",
+      role: "root",
+      must_change_password: false,
+      via: "session",
+      capabilities: rootCapabilities,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(mockMe));
+
+    const result = await signIn("root", "correct_password_123");
+    expect(result).toBe("root");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/auth/login");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(init.body)).toEqual({
+      username: "root",
+      password: "correct_password_123",
+    });
+  });
+
+  it("signIn devolve unauthenticated em 401", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: "Invalid credentials" }, 401));
+
+    const result = await signIn("root", "wrong_password");
+    expect(result).toBe("unauthenticated");
+    expect(tier()).toBe("unauthenticated");
+  });
+
+  it("changePassword envia POST /auth/password com CSRF", async () => {
+    document.cookie = "ai_memory_csrf=csrf_secret_abc; path=/";
+    const mockMe: AuthMe = {
+      username: "root",
+      name: "Root Operator",
+      role: "root",
+      must_change_password: false,
+      via: "session",
+      capabilities: rootCapabilities,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(mockMe));
+
+    const updated = await changePassword({
+      current_password: "old_password_123",
+      new_password: "new_secure_password_456",
+      new_password_confirmation: "new_secure_password_456",
+    });
+
+    expect(updated.must_change_password).toBe(false);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/auth/password");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(init.headers["X-CSRF-Token"]).toBe("csrf_secret_abc");
+  });
+
+  it("recovery envia POST /auth/recovery sem criar sessão", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+    await recovery({
+      recovery_token: "server_recovery_secret_32_chars",
+      new_password: "new_root_password_123",
+      new_password_confirmation: "new_root_password_123",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/auth/recovery");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+  });
+
+  it("signOut envia POST /auth/logout e limpa estado local", async () => {
+    document.cookie = "ai_memory_csrf=csrf_val; path=/";
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+    await signOut();
+
+    expect(tier()).toBe("unauthenticated");
+    expect(authMe()).toBeNull();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/auth/logout");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(init.headers["X-CSRF-Token"]).toBe("csrf_val");
   });
 });

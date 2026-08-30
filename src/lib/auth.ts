@@ -1,201 +1,352 @@
 import { createSignal } from "solid-js";
-import { API_ROOT, BASE_PATH } from "~/lib/base-path";
+import { BASE_PATH } from "~/lib/base-path";
 
-// Sessão da área administrativa.
-//
-// O engine só lê o cookie de sessão em GET (`auth.rs:314-321`); toda mutação
-// exige `Authorization: Bearer`. Por isso a chave fica no browser e viaja como
-// Bearer em todo request — é o que a tela de login promete ("fica só neste
-// navegador").
-const TOKEN_KEY = "ai-memory-ui.token";
-
-export function getToken(): string | null {
-  if (typeof localStorage === "undefined") return null;
-  const raw = localStorage.getItem(TOKEN_KEY);
-  return raw && raw.trim() ? raw : null;
+export interface AuthCapabilities {
+  normal_read: boolean;
+  normal_write: boolean;
+  admin: boolean;
+  user_management: boolean;
 }
 
-export function setToken(token: string): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token.trim());
+export interface AuthMe {
+  username: string | null;
+  name: string | null;
+  role: "root" | "user" | null;
+  must_change_password: boolean;
+  via: "session" | "anonymous" | "bearer" | string;
+  capabilities: AuthCapabilities;
 }
 
-export function clearToken(): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-// Sufixo da chave, pro rodapé da sidebar dizer *qual* credencial está em uso sem
-// revelá-la. O engine não expõe identidade do chamador (não há whoami), então
-// isto é o mais honesto disponível junto ao papel derivado do tier.
-export function maskedToken(): string | null {
-  const token = getToken();
-  if (!token) return null;
-  return token.length <= 4 ? "••••" : `••••${token.slice(-4)}`;
-}
-// Degraus observáveis, derivados só de status HTTP:
-//
-// - `admin`            bearer raiz aceito em `/admin/status` (chave no browser)
-// - `cookie-admin`     engine COM auth, sessão autenticada apenas pelo cookie
-//                      (Basic/oauth2-proxy). Enxerga tudo, mas o engine só lê o
-//                      cookie em GET: qualquer mutação exige `Authorization`.
-// - `anonymous-admin`  engine SEM auth configurada: `/admin/*` responde a
-//                      qualquer um, mas `UserManagement` segue root-only
-// - `anonymous`        leitura pública, `/admin/*` fechado
-// - `user`             token/cookie de usuário do banco: `/api/v1` sim, `/admin` não
-// - `unauthenticated`  credencial ausente ou recusada com 401
-// - `unreachable`      não foi possível concluir (engine fora, 5xx, 403
-//                      inesperado). **A chave é preservada**: só um 401
-//                      autoriza descartá-la.
 export type Tier =
-  | "admin"
-  | "cookie-admin"
-  | "anonymous-admin"
-  | "anonymous"
+  | "root"
   | "user"
+  | "anonymous"
+  | "anonymous-admin"
+  | "must-change-password"
   | "unauthenticated"
   | "unreachable";
 
-/** Enxerga as telas administrativas (tudo ali é GET). */
-export function isAdminTier(tier: Tier): boolean {
-  return tier === "admin" || tier === "cookie-admin" || tier === "anonymous-admin";
+/**
+ * Lê o cookie CSRF legível (`ai_memory_csrf`) gravado pelo engine no mesmo domínio (Path=/).
+ */
+export function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)ai_memory_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
-/** Pode EXECUTAR operação que muda estado.
- *
- *  O cookie de sessão do engine autentica somente GET; toda mutação exige o
- *  header `Authorization`. Sem chave no browser, oferecer purge/rename/commit
- *  seria oferecer um botão que só sabe responder 401. */
-export function canMutate(tier: Tier): boolean {
-  return tier === "admin" || tier === "anonymous-admin";
+/**
+ * Headers CSRF para mutações autenticadas por cookie (`POST`, `PUT`, `PATCH`, `DELETE`).
+ */
+export function csrfHeaders(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-CSRF-Token": token } : {};
 }
 
-// `Capability::UserManagement` é sempre root-only: nem modo anônimo nem sessão
-// só-cookie chegam lá.
-export function canManageUsers(tier: Tier): boolean {
-  return tier === "admin";
-}
-
-// Só o status importa aqui. Um 401 do host vem como `text/plain`
-// ("auth required\n"), não como `{error}` — nunca tentar JSON nesta sonda.
-async function probeStatus(url: string, headers: Record<string, string>): Promise<number> {
+export function clearLegacyCredential(): void {
+  if (typeof localStorage === "undefined") return;
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json", ...headers } });
-    return response.status;
+    localStorage.removeItem("ai-memory-ui.token");
   } catch {
-    // Rede fora / engine parado: 0 significa "indeterminado" e o chamador cai
-    // no degrau mais baixo em vez de afirmar um papel que não observou.
-    return 0;
+    // Storage can be unavailable in hardened browser contexts.
   }
 }
 
-// Preview offline (`VITE_FIXTURES=1 npm run dev`): `api.ts` serve dados de
-// exemplo sem engine, então a sonda também precisa concluir — senão nenhuma
-// chave é aceita e o walkthrough para no login. Sem chave o preview equivale a
-// um engine sem auth configurada (`anonymous-admin`): as telas administrativas
-// existem e a leitura é pública. Inerte em produção.
-const USE_FIXTURES = import.meta.env.DEV && import.meta.env.VITE_FIXTURES === "1";
-
-export async function probeTier(): Promise<Tier> {
-  if (USE_FIXTURES) {
-    return getToken() ? "admin" : "anonymous-admin";
-  }
-  if (getToken()) {
-    const admin = await probeStatus(`${BASE_PATH}/admin/status`, authHeaders());
-    if (admin === 200) return "admin";
-
-    const read = await probeStatus(`${API_ROOT}/workspaces`, authHeaders());
-    if (read === 200) return "user";
-
-    // Só o 401 é veredito sobre a credencial (o engine responde 401 a bearer
-    // desconhecido). Rede fora, 5xx ou 403 inesperado são indeterminados.
-    if (read === 401) {
-      clearToken();
-      return "unauthenticated";
-    }
-    return "unreachable";
-  }
-
-  // Sem chave no browser, um 200 pode significar duas coisas OPOSTAS:
-  //
-  //   a) o engine não tem auth configurada (modo sem operador), ou
-  //   b) o engine tem auth e esta navegação já está autenticada pelo cookie de
-  //      sessão que ele emite após um Basic/oauth2-proxy — o `/web` é servido
-  //      atrás de auth, então chegar aqui já implica ter passado por ela.
-  //
-  // Chamar (b) de "anônimo · sem operador" seria mentira: a sessão É
-  // autenticada. O discriminador é mandar um bearer inválido — o engine avalia
-  // o header ANTES do cookie e responde 401 sempre que auth existe, enquanto um
-  // engine sem auth ignora o header e responde 200.
-  const junk = await probeStatus(`${API_ROOT}/workspaces`, {
-    Authorization: "Bearer ai-memory-ui-probe-invalid",
-  });
-  if (junk === 0) return "unreachable";
-
-  const read = await probeStatus(`${API_ROOT}/workspaces`, {});
-  if (read === 401) return "unauthenticated";
-  if (read !== 200) return "unreachable";
-
-  const admin = await probeStatus(`${BASE_PATH}/admin/status`, {});
-
-  if (junk === 401) {
-    // Auth configurada: os 200 acima vêm do cookie de sessão. É um operador
-    // autenticado, mas o cookie só vale para GET — daí `cookie-admin`, que vê
-    // tudo e não oferece mutação até a chave ser colada.
-    return admin === 200 ? "cookie-admin" : "user";
-  }
-
-  // Sem auth configurada. O degrau admin só é afirmado se observado.
-  return admin === 200 ? "anonymous-admin" : "anonymous";
+/**
+ * Enxerga as telas administrativas (/admin/*).
+ */
+export function isAdminTier(current: Tier): boolean {
+  return current === "root" || current === "anonymous-admin";
 }
 
-// Decisão do guard global. Só `unauthenticated` manda para o login: o degrau
-// `unreachable` preserva a chave e deixa cada tela mostrar o próprio erro —
-// expulsar o operador por causa de um 5xx do engine seria destrutivo.
+/**
+ * Pode executar operações que mudam estado (mutações).
+ * Com sessão web via cookie HttpOnly + CSRF, usuários autenticados têm capacidade real.
+ */
+export function canMutate(current: Tier): boolean {
+  return current === "root" || current === "user" || current === "anonymous-admin";
+}
+
+/**
+ * Capacidade UserManagement: somente root humano tem acesso a /admin/users.
+ */
+export function canManageUsers(current: Tier): boolean {
+  return current === "root";
+}
+
+/**
+ * Decisão do guard global de rota.
+ */
 export function shouldRedirectToLogin(current: Tier, pathname: string): boolean {
-  if (current !== "unauthenticated") return false;
-  return !pathname.replace(/\/+$/, "").endsWith("/login");
+  const isLoginPage = pathname === "/login" || pathname === "/login/";
+  if (current === "unauthenticated" || current === "must-change-password") {
+    return !isLoginPage;
+  }
+  return false;
 }
 
+const [authMe, setAuthMe] = createSignal<AuthMe | null>(null);
 const [tier, setTier] = createSignal<Tier>("unauthenticated");
 const [tierResolved, setTierResolved] = createSignal(false);
 
-export { tier, tierResolved };
+export { authMe, setAuthMe, tier, tierResolved };
+
+const USE_FIXTURES = import.meta.env.DEV && import.meta.env.VITE_FIXTURES === "1";
+let fixtureAuthMeOverride: AuthMe | null | undefined = undefined;
+
+function fixtureAuthUsesNetwork(): boolean {
+  return (
+    USE_FIXTURES &&
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("ai-memory-ui.fixture-auth-network") === "1"
+  );
+}
+
+export function setFixtureAuthMe(override: AuthMe | null | undefined): void {
+  fixtureAuthMeOverride = override;
+}
+
+export function deriveTierFromAuthMe(me: AuthMe | null): Tier {
+  if (!me) return "unauthenticated";
+  if (me.must_change_password) return "must-change-password";
+  if (me.role === "root" || me.capabilities.user_management) return "root";
+  if (me.role === "user") return "user";
+  if (me.via === "anonymous") {
+    return me.capabilities.admin ? "anonymous-admin" : "anonymous";
+  }
+  return me.capabilities.admin ? "root" : "user";
+}
+
+export async function fetchAuthMe(): Promise<AuthMe | null> {
+  if (USE_FIXTURES && !fixtureAuthUsesNetwork()) {
+    if (fixtureAuthMeOverride !== undefined) {
+      return fixtureAuthMeOverride;
+    }
+    if (typeof window !== "undefined" && /\/login\/?$/.test(window.location.pathname)) {
+      return null;
+    }
+    return {
+      username: "root",
+      name: "Root Operator",
+      role: "root",
+      must_change_password: false,
+      via: "session",
+      capabilities: {
+        normal_read: true,
+        normal_write: true,
+        admin: true,
+        user_management: true,
+      },
+    };
+  }
+
+  try {
+    const res = await fetch(`${BASE_PATH}/auth/me`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (res.status === 401) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error(`Auth check failed: ${res.status}`);
+    }
+    return (await res.json()) as AuthMe;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("401")) {
+      return null;
+    }
+    throw err;
+  }
+}
 
 export async function refreshTier(): Promise<Tier> {
-  const next = await probeTier();
-  setTier(next);
-  setTierResolved(true);
-  return next;
+  try {
+    const me = await fetchAuthMe();
+    setAuthMe(me);
+    const next = deriveTierFromAuthMe(me);
+    setTier(next);
+    setTierResolved(true);
+    return next;
+  } catch {
+    setAuthMe(null);
+    setTier("unreachable");
+    setTierResolved(true);
+    return "unreachable";
+  }
 }
 
-// Entrar: guarda a chave e reavalia. Chave recusada volta `unauthenticated`
-// (o próprio probe já limpou o storage).
-export async function signIn(token: string): Promise<Tier> {
-  setToken(token);
-  return refreshTier();
-}
-
-// Resolução única por carga, compartilhada por quem precisar do tier antes de
-// renderizar (o guard de rota roda no `beforeLoad`). Sem isto, cada chamada
-// dispararia sondas concorrentes e o guard poderia decidir com tier obsoleto.
 let inflight: Promise<Tier> | null = null;
 
 export function ensureTier(): Promise<Tier> {
   if (tierResolved()) return Promise.resolve(tier());
-  inflight ??= refreshTier().finally(() => {
+  if (inflight) return inflight;
+  inflight = refreshTier().finally(() => {
     inflight = null;
   });
   return inflight;
 }
 
-export function signOut(): void {
-  clearToken();
+export async function signIn(username: string, password: string): Promise<Tier> {
+  if (USE_FIXTURES && !fixtureAuthUsesNetwork()) {
+    const isRoot = username === "root" || username === "admin";
+    const me: AuthMe = {
+      username,
+      name: isRoot ? "Root Operator" : username,
+      role: isRoot ? "root" : "user",
+      must_change_password: false,
+      via: "session",
+      capabilities: {
+        normal_read: true,
+        normal_write: true,
+        admin: isRoot,
+        user_management: isRoot,
+      },
+    };
+    setAuthMe(me);
+    const next = deriveTierFromAuthMe(me);
+    setTier(next);
+    setTierResolved(true);
+    return next;
+  }
+
+  const res = await fetch(`${BASE_PATH}/auth/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (res.status === 401) {
+    setAuthMe(null);
+    setTier("unauthenticated");
+    return "unauthenticated";
+  }
+  if (res.status === 429) {
+    throw new Error("429");
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Login failed (${res.status})`);
+  }
+
+  const me = (await res.json()) as AuthMe;
+  setAuthMe(me);
+  const next = deriveTierFromAuthMe(me);
+  setTier(next);
+  setTierResolved(true);
+  return next;
+}
+
+export async function changePassword(params: {
+  current_password: string;
+  new_password: string;
+  new_password_confirmation: string;
+}): Promise<AuthMe> {
+  if (USE_FIXTURES) {
+    const current = authMe();
+    const updated: AuthMe = {
+      username: current?.username ?? "root",
+      name: current?.name ?? "Root Operator",
+      role: current?.role ?? "root",
+      must_change_password: false,
+      via: "session",
+      capabilities: current?.capabilities ?? {
+        normal_read: true,
+        normal_write: true,
+        admin: true,
+        user_management: true,
+      },
+    };
+    setAuthMe(updated);
+    setTier(deriveTierFromAuthMe(updated));
+    return updated;
+  }
+
+  const res = await fetch(`${BASE_PATH}/auth/password`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let msg = "Password change failed";
+    try {
+      const data = await res.json();
+      if (data.error) msg = data.error;
+    } catch {
+      const text = await res.text();
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+
+  const me = await fetchAuthMe();
+  setAuthMe(me);
+  setTier(deriveTierFromAuthMe(me));
+  return me!;
+}
+
+export async function recovery(params: {
+  recovery_token: string;
+  new_password: string;
+  new_password_confirmation: string;
+}): Promise<void> {
+  if (USE_FIXTURES) {
+    return;
+  }
+
+  const res = await fetch(`${BASE_PATH}/auth/recovery`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let msg = "Recovery failed";
+    try {
+      const data = await res.json();
+      if (data.error) msg = data.error;
+    } catch {
+      const text = await res.text();
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+}
+
+export async function signOut(): Promise<void> {
+  if (!USE_FIXTURES) {
+    try {
+      await fetch(`${BASE_PATH}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          ...csrfHeaders(),
+        },
+      });
+    } catch {
+      // ignore
+    }
+  }
+  setAuthMe(null);
   setTier("unauthenticated");
   setTierResolved(true);
 }

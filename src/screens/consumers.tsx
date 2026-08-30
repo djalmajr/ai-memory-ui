@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
@@ -174,7 +174,7 @@ function ConsumersBody() {
                       </td>
                       <td class="px-2 py-1.5">
                         <div class="flex flex-wrap justify-end gap-1">
-                          <Show when={row.revoked_at === null}>
+                          <Show when={row.revoked_at === null || row.revoked_at === undefined}>
                             <Button
                               size="sm"
                               variant="ghost"
@@ -341,8 +341,10 @@ function ScopeChip(props: { scope: string }) {
 
 function StateBadge(props: { row: ConsumerKey }) {
   const state = () => {
-    if (props.row.revoked_at !== null) return "revoked" as const;
-    if (props.row.expires_at !== null) {
+    if (props.row.revoked_at !== null && props.row.revoked_at !== undefined) {
+      return "revoked" as const;
+    }
+    if (props.row.expires_at !== null && props.row.expires_at !== undefined) {
       const expires = fromUnixSeconds(props.row.expires_at);
       if (expires && expires.valueOf() <= Date.now()) return "expired" as const;
     }
@@ -364,6 +366,12 @@ function StateBadge(props: { row: ConsumerKey }) {
 }
 
 function Modal(props: { title: string; onClose: () => void; children: JSX.Element }) {
+  let dialog!: HTMLDivElement;
+  const previousFocus =
+    typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
+  onMount(() => dialog.focus());
+  onCleanup(() => previousFocus?.focus());
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar-bg/80 p-4"
@@ -371,12 +379,42 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
       onClick={props.onClose}
     >
       <div
-        class="flex w-[400px] max-w-full flex-col gap-4 rounded-lg border border-hairline bg-content-bg p-4 shadow-card"
+        ref={dialog}
+        class="flex w-[400px] max-w-full flex-col gap-4 rounded-lg border border-hairline bg-content-bg p-4 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="consumers-dialog-title"
+        tabindex="-1"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            props.onClose();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            dialog.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            ),
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 class="text-sm font-semibold">{props.title}</h2>
+        <h2 id="consumers-dialog-title" class="text-sm font-semibold">
+          {props.title}
+        </h2>
         {props.children}
       </div>
     </div>

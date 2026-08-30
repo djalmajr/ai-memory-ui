@@ -1,5 +1,5 @@
 import { ApiError } from "~/lib/api";
-import { authHeaders } from "~/lib/auth";
+import { csrfHeaders } from "~/lib/auth";
 import { BASE_PATH } from "~/lib/base-path";
 
 // Cliente do sidecar mcp-auth (issue ops #9). As rotas `/keys*` NÃO são
@@ -67,12 +67,15 @@ async function errorMessage(response: Response): Promise<string> {
 
 async function keysRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   try {
     response = await fetch(`${keysBase()}${path}`, {
       ...init,
+      credentials: "include",
       headers: {
         Accept: "application/json",
-        ...authHeaders(),
+        ...(isMutation ? csrfHeaders() : {}),
         ...init?.headers,
       },
     });
@@ -81,7 +84,6 @@ async function keysRequest<T>(path: string, init?: RequestInit): Promise<T> {
     // no banner "backend indisponível" em vez de um erro genérico.
     throw new ApiError(0, "keys backend unavailable");
   }
-
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response));
   }
@@ -89,7 +91,6 @@ async function keysRequest<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
   const contentType = response.headers.get("content-type") ?? "";
-  const method = (init?.method ?? "GET").toUpperCase();
   if (!contentType.includes("json")) {
     // DELETE sem corpo é sucesso; GET/POST HTML (SPA catch-all quando
     // `/keys` não está na borda) conta como sidecar ausente.

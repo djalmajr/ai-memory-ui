@@ -9,7 +9,7 @@ import { EmptyState } from "~/components/ui-bits";
 import { adminBackup, adminCheckpoints, adminCommit, adminReorg } from "~/lib/admin-api";
 import type { Checkpoint, CommitResult } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
-import { canMutate, isAdminTier, tier } from "~/lib/auth";
+import { canMutate, tier } from "~/lib/auth";
 import { formatDateTime, fromUnixSeconds } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
@@ -179,12 +179,6 @@ export function ServerOpsScreen() {
       actions={<span>{t(() => m.ops_subtitle())}</span>}
     >
       <div class="flex flex-col gap-4">
-        {/* Cookie autentica só GET: dizer por que as execuções estão travadas. */}
-        <Show when={isAdminTier(tier()) && !canMutate(tier())}>
-          <p class="rounded-md border border-hairline bg-muted/40 p-4 text-xs text-muted-foreground">
-            {t(() => m.mutation_needs_key())}
-          </p>
-        </Show>
         <OpCard
           description={t(() => m.ops_backup_desc())}
           pending={backupPending()}

@@ -20,7 +20,7 @@ beforeEach(() => {
   // Qualquer fetch aqui seria erro: no modo fixtures a sonda não deve tocar rede.
   vi.stubGlobal(
     "fetch",
-    vi.fn(() => Promise.reject(new Error("probeTier não deve chamar fetch em modo fixtures"))),
+    vi.fn(() => Promise.reject(new Error("fetchAuthMe não deve chamar fetch em modo fixtures"))),
   );
 });
 
@@ -32,22 +32,41 @@ afterEach(() => {
 });
 
 describe("modo fixtures", () => {
-  // Sem chave o preview equivale a engine sem auth: as telas administrativas
-  // existem. Devolver `unauthenticated` mandaria a suíte e2e toda pro login.
-  it("sem chave => anonymous-admin, sem tocar a rede", async () => {
+  it("modo fixtures retorna sessão root mock sem tocar a rede", async () => {
     const auth = await loadAuth(true);
-    expect(await auth.probeTier()).toBe("anonymous-admin");
+    const me = await auth.fetchAuthMe();
+    expect(me).not.toBeNull();
+    expect(me?.role).toBe("root");
+    expect(await auth.ensureTier()).toBe("root");
   });
 
-  it("com chave => admin", async () => {
+  it("permite simular login de usuário em fixtures", async () => {
     const auth = await loadAuth(true);
-    auth.setToken("amk_preview");
-    expect(await auth.probeTier()).toBe("admin");
+    const tier = await auth.signIn("alice", "password123");
+    expect(tier).toBe("user");
+    expect(auth.authMe()?.username).toBe("alice");
   });
 
-  // Fora do preview o atalho não pode existir: a sonda tem de falar com o engine.
-  it("fora do modo fixtures a sonda usa a rede", async () => {
+  it("permite customizar authMe de fixture via setFixtureAuthMe", async () => {
+    const auth = await loadAuth(true);
+    auth.setFixtureAuthMe({
+      username: null,
+      name: null,
+      role: null,
+      must_change_password: false,
+      via: "anonymous",
+      capabilities: {
+        normal_read: true,
+        normal_write: true,
+        admin: true,
+        user_management: false,
+      },
+    });
+    expect(await auth.refreshTier()).toBe("anonymous-admin");
+  });
+
+  it("fora do modo fixtures a verificação de auth tenta usar a rede", async () => {
     const auth = await loadAuth(false);
-    await expect(auth.probeTier()).resolves.toBe("unreachable");
+    await expect(auth.refreshTier()).resolves.toBe("unreachable");
   });
 });

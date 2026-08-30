@@ -3,7 +3,7 @@
 // `<meta name="ai-memory-base-path">` com esse prefixo (vazio na raiz do host).
 //
 // Vive num módulo próprio porque `api.ts` (dados) e `auth.ts` (sessão/tier)
-// precisam do mesmo prefixo: `api.ts` importa `authHeaders` de `auth.ts`, e se
+// precisam do mesmo prefixo: `api.ts` importa `csrfHeaders` de `auth.ts`, e se
 // `auth.ts` importasse o prefixo de `api.ts` fecharia um ciclo de módulos.
 export function readBasePath(): string {
   if (typeof document === "undefined") return "";

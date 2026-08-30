@@ -17,16 +17,19 @@ the same-origin `/api/v1` JSON API.
 | --- | --- | --- |
 | ![Project overview](docs/screenshots/project-overview.png) | ![Document](docs/screenshots/document.png) | ![Search](docs/screenshots/search.png) |
 
-## Purpose
+## Purpose & Authentication
 
 This app is a same-origin SPA for `ai-memory`:
 
 - `/web` serves the built `dist/` directory (`--web-ui-dir`).
-- `/api/v1` remains the only data source.
+- Human authentication uses username and password via `POST /auth/login`, issuing an `HttpOnly` session cookie (`ai_memory_session`) and a readable CSRF cookie (`ai_memory_csrf`).
+- All state-changing mutations (`POST`, `PUT`, `PATCH`, `DELETE`) require the `X-CSRF-Token` header.
+- No secret tokens or Bearer credentials are stored in `localStorage` or transmitted by the browser for human access.
+- Native programmatic credentials (`aim_`) are managed in **Access** (`/access`) and authenticate agents and CLI directly on the engine.
+- External consumer keys (`amk_`) are managed in **Consumers** (`/consumers`) under `mcp-auth` authority.
+- Break-glass recovery is supported via `POST /auth/recovery` using the server's configured recovery token.
+- `/api/v1` and `/admin` JSON APIs serve the frontend with `credentials: "include"`.
 - The UI never reads SQLite or wiki files directly.
-- MCP remains for agents; `/api/v1` is for browser frontends.
-
-## Multi-scope model
 
 The UI supports the workspace layout where each company/client can be a
 workspace, while shared knowledge lives in separate workspaces such as

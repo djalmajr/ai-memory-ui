@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
@@ -9,12 +9,13 @@ import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
 import {
   adminCreateUser,
-  adminExpireUser,
-  adminReviveUser,
-  adminRotateUserToken,
+  adminDisableUser,
+  adminEnableUser,
+  adminResetUserPassword,
+  adminUpdateUser,
   adminUsers,
 } from "~/lib/admin-api";
-import type { AdminUser, UserWithToken } from "~/lib/admin-types";
+import type { AdminUser, UserWithPassword } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
 import { canManageUsers, tier } from "~/lib/auth";
 import { formatDateTime, formatRelative, fromMicros } from "~/lib/datetime";
@@ -22,19 +23,12 @@ import { t } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 
-// Tela `/users` (B6). Fonte: GET `/admin/users` → `{users}` já desembrulhado
-// por `adminUsers()`. Timestamps em MICROssegundos. O token em claro só existe
-// nas respostas de create/rotate e vive num signal local — nunca no cache da
-// query, porque o engine não o devolve de novo.
-//
-// Colunas que o protótipo poderia sugerir (papel, workspace, versões de
-// token) não existem no schema `users` e ficam de fora.
-
 type Dialog =
   | { kind: "create" }
-  | { kind: "expire"; user: AdminUser }
-  | { kind: "rotate"; user: AdminUser }
-  | { kind: "secret"; username: string; token: string; source: "create" | "rotate" };
+  | { kind: "edit"; user: AdminUser }
+  | { kind: "reset-password"; user: AdminUser }
+  | { kind: "disable"; user: AdminUser }
+  | { kind: "secret"; username: string; password: string };
 
 export function UsersScreen() {
   const allowed = () => canManageUsers(tier());
@@ -65,6 +59,16 @@ function Forbidden() {
   );
 }
 
+function isLastActiveRoot(user: AdminUser, users: AdminUser[]): boolean {
+  if (user.role !== "root" || user.disabled_at !== null || !user.has_password) {
+    return false;
+  }
+  const activeRoots = users.filter(
+    (u) => u.role === "root" && u.disabled_at === null && u.has_password,
+  );
+  return activeRoots.length <= 1;
+}
+
 function UsersBody() {
   const q = useQuery(() => ({
     queryKey: ["admin", "users"],
@@ -73,27 +77,17 @@ function UsersBody() {
 
   const [dialog, setDialog] = createSignal<Dialog | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
-  const [pepperOff, setPepperOff] = createSignal(false);
   const [rowError, setRowError] = createSignal<string | null>(null);
 
   const close = () => setDialog(null);
 
-  const onPepper = () => {
-    setPepperOff(true);
-    close();
-  };
-
-  const revive = async (user: AdminUser) => {
+  const enable = async (user: AdminUser) => {
     setBusy(user.username);
     setRowError(null);
     try {
-      await adminReviveUser(user.username);
+      await adminEnableUser(user.username);
       await q.refetch();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 503) {
-        onPepper();
-        return;
-      }
       setRowError(error instanceof ApiError ? error.message : String(error));
     } finally {
       setBusy(null);
@@ -105,25 +99,14 @@ function UsersBody() {
       <div class="flex items-center justify-end">
         <Button
           size="sm"
-          disabled={pepperOff()}
           onClick={() => {
-            setPepperOff(false);
+            setRowError(null);
             setDialog({ kind: "create" });
           }}
         >
           {t(() => m.users_new())}
         </Button>
       </div>
-
-      <Show when={pepperOff()}>
-        <div
-          class="flex flex-col gap-1 rounded-lg border border-hairline bg-accent p-4 text-accent-foreground"
-          role="status"
-        >
-          <strong class="text-sm font-medium">{t(() => m.users_pepper_title())}</strong>
-          <p class="text-xs">{t(() => m.users_pepper_body())}</p>
-        </div>
-      </Show>
 
       <Show when={rowError()}>
         {(message) => (
@@ -166,69 +149,91 @@ function UsersBody() {
               <thead>
                 <tr class="text-left text-xs text-muted-foreground">
                   <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.users_col_username())}</th>
-                  <th class="w-[160px] px-2 py-1.5 font-medium">{t(() => m.users_col_name())}</th>
-                  <th class="w-[200px] px-2 py-1.5 font-medium">{t(() => m.users_col_email())}</th>
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.users_col_created())}</th>
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.users_col_last_seen())}</th>
-                  <th class="w-[180px] px-2 py-1.5 font-medium">{t(() => m.users_col_token())}</th>
-                  <th class="w-[220px] px-2 py-1.5 font-medium" />
+                  <th class="w-[150px] px-2 py-1.5 font-medium">{t(() => m.users_col_name())}</th>
+                  <th class="w-[180px] px-2 py-1.5 font-medium">{t(() => m.users_col_email())}</th>
+                  <th class="w-[90px] px-2 py-1.5 font-medium">{t(() => m.users_col_role())}</th>
+                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.users_col_status())}</th>
+                  <th class="w-[130px] px-2 py-1.5 font-medium">{t(() => m.users_col_created())}</th>
+                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.users_col_last_seen())}</th>
+                  <th class="w-[200px] px-2 py-1.5 font-medium" />
                 </tr>
               </thead>
               <tbody>
                 <For each={q.data}>
-                  {(user) => (
-                    <tr class="border-t border-hairline">
-                      <td class="px-2 py-1.5 font-mono">{user.username}</td>
-                      <td class="px-2 py-1.5">{user.name ?? "—"}</td>
-                      <td class="px-2 py-1.5">{user.email ?? "—"}</td>
-                      <td class="px-2 py-1.5 text-muted-foreground">
-                        {formatDateTime(fromMicros(user.created_at))}
-                      </td>
-                      <td class="px-2 py-1.5 text-muted-foreground">
-                        {user.last_seen_at === null
-                          ? "—"
-                          : formatRelative(fromMicros(user.last_seen_at))}
-                      </td>
-                      <td class="px-2 py-1.5">
-                        <TokenCell user={user} />
-                      </td>
-                      <td class="px-2 py-1.5">
-                        <div class="flex flex-wrap justify-end gap-1">
-                          <Show when={user.token_expired_at === null}>
+                  {(user) => {
+                    const isLastRoot = () => isLastActiveRoot(user, q.data ?? []);
+                    const isDisabled = () => user.disabled_at !== null;
+                    return (
+                      <tr class="border-t border-hairline">
+                        <td class="px-2 py-1.5 font-mono">{user.username}</td>
+                        <td class="px-2 py-1.5">{user.name ?? "—"}</td>
+                        <td class="px-2 py-1.5">{user.email ?? "—"}</td>
+                        <td class="px-2 py-1.5">
+                          <Badge variant={user.role === "root" ? "default" : "secondary"}>
+                            {user.role === "root" ? t(() => m.users_role_root()) : t(() => m.users_role_user())}
+                          </Badge>
+                        </td>
+                        <td class="px-2 py-1.5">
+                          <StatusCell user={user} />
+                        </td>
+                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
+                          {formatDateTime(fromMicros(user.created_at))}
+                        </td>
+                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
+                          {user.last_used_at !== null && user.last_used_at !== undefined
+                            ? formatRelative(fromMicros(user.last_used_at))
+                            : user.last_seen_at !== null && user.last_seen_at !== undefined
+                              ? formatRelative(fromMicros(user.last_seen_at))
+                              : "—"}
+                        </td>
+                        <td class="px-2 py-1.5">
+                          <div class="flex flex-wrap justify-end gap-1">
                             <Button
                               size="sm"
                               variant="ghost"
-                              class="h-7"
+                              class="h-7 text-xs"
                               disabled={busy() === user.username}
-                              onClick={() => setDialog({ kind: "expire", user })}
+                              onClick={() => setDialog({ kind: "edit", user })}
                             >
-                              {t(() => m.users_action_expire())}
+                              {t(() => m.users_action_edit())}
                             </Button>
-                          </Show>
-                          <Show when={user.token_expired_at !== null}>
                             <Button
                               size="sm"
                               variant="ghost"
-                              class="h-7"
+                              class="h-7 text-xs"
                               disabled={busy() === user.username}
-                              onClick={() => void revive(user)}
+                              onClick={() => setDialog({ kind: "reset-password", user })}
                             >
-                              {t(() => m.users_action_revive())}
+                              {t(() => m.users_action_reset_password())}
                             </Button>
-                          </Show>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            class="h-7"
-                            disabled={busy() === user.username || pepperOff()}
-                            onClick={() => setDialog({ kind: "rotate", user })}
-                          >
-                            {t(() => m.users_action_rotate())}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                            <Show when={!isDisabled()}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                class="h-7 text-xs"
+                                disabled={busy() === user.username || isLastRoot()}
+                                title={isLastRoot() ? t(() => m.users_last_root_protected()) : undefined}
+                                onClick={() => setDialog({ kind: "disable", user })}
+                              >
+                                {t(() => m.users_action_disable())}
+                              </Button>
+                            </Show>
+                            <Show when={isDisabled()}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                class="h-7 text-xs text-primary"
+                                disabled={busy() === user.username}
+                                onClick={() => void enable(user)}
+                              >
+                                {t(() => m.users_action_enable())}
+                              </Button>
+                            </Show>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }}
                 </For>
               </tbody>
             </table>
@@ -241,43 +246,67 @@ function UsersBody() {
       <Show when={dialog()?.kind === "create"}>
         <CreateUserDialog
           onClose={close}
-          onPepper={onPepper}
           onCreated={(result) => {
             void q.refetch();
-            setDialog({
-              kind: "secret",
-              username: result.user.username,
-              token: result.token,
-              source: "create",
-            });
+            const pw = result.temporary_password || result.password || "";
+            if (pw) {
+              setDialog({
+                kind: "secret",
+                username: result.user.username,
+                password: pw,
+              });
+            } else {
+              close();
+            }
           }}
         />
       </Show>
 
-      <Show when={dialog()?.kind === "expire" ? dialog() : null}>
+      <Show when={dialog()?.kind === "edit" ? dialog() : null}>
         {(current) => {
-          const d = current() as Extract<Dialog, { kind: "expire" }>;
+          const d = current() as Extract<Dialog, { kind: "edit" }>;
+          const isLastRoot = () => isLastActiveRoot(d.user, q.data ?? []);
+          return (
+            <EditUserDialog
+              user={d.user}
+              isLastRoot={isLastRoot()}
+              onClose={close}
+              onUpdated={() => {
+                void q.refetch();
+                close();
+              }}
+            />
+          );
+        }}
+      </Show>
+
+      <Show when={dialog()?.kind === "reset-password" ? dialog() : null}>
+        {(current) => {
+          const d = current() as Extract<Dialog, { kind: "reset-password" }>;
           return (
             <ConfirmNameDialog
-              title={t(() => m.users_action_expire())}
-              body={t(() => m.users_confirm_expire_body({ name: d.user.username }))}
+              title={t(() => m.users_action_reset_password())}
+              body={t(() => m.users_confirm_reset_password_body({ name: d.user.username }))}
               target={d.user.username}
-              confirmLabel={t(() => m.users_action_expire())}
+              confirmLabel={t(() => m.users_action_reset_password())}
               destructive
               pending={busy() === d.user.username}
               onClose={close}
               onConfirm={async () => {
                 setBusy(d.user.username);
                 try {
-                  await adminExpireUser(d.user.username);
+                  const result = await adminResetUserPassword(d.user.username);
                   await q.refetch();
-                  close();
-                } catch (error) {
-                  if (error instanceof ApiError && error.status === 503) {
-                    onPepper();
-                    return;
+                  const pw = result.temporary_password || result.password || "";
+                  if (pw) {
+                    setDialog({
+                      kind: "secret",
+                      username: d.user.username,
+                      password: pw,
+                    });
+                  } else {
+                    close();
                   }
-                  throw error;
                 } finally {
                   setBusy(null);
                 }
@@ -287,34 +316,24 @@ function UsersBody() {
         }}
       </Show>
 
-      <Show when={dialog()?.kind === "rotate" ? dialog() : null}>
+      <Show when={dialog()?.kind === "disable" ? dialog() : null}>
         {(current) => {
-          const d = current() as Extract<Dialog, { kind: "rotate" }>;
+          const d = current() as Extract<Dialog, { kind: "disable" }>;
           return (
             <ConfirmNameDialog
-              title={t(() => m.users_action_rotate())}
-              body={t(() => m.users_confirm_rotate_body({ name: d.user.username }))}
+              title={t(() => m.users_action_disable())}
+              body={t(() => m.users_confirm_disable_body({ name: d.user.username }))}
               target={d.user.username}
-              confirmLabel={t(() => m.users_action_rotate())}
+              confirmLabel={t(() => m.users_action_disable())}
+              destructive
               pending={busy() === d.user.username}
               onClose={close}
               onConfirm={async () => {
                 setBusy(d.user.username);
                 try {
-                  const result = await adminRotateUserToken(d.user.username);
+                  await adminDisableUser(d.user.username);
                   await q.refetch();
-                  setDialog({
-                    kind: "secret",
-                    username: result.user.username,
-                    token: result.token,
-                    source: "rotate",
-                  });
-                } catch (error) {
-                  if (error instanceof ApiError && error.status === 503) {
-                    onPepper();
-                    return;
-                  }
-                  throw error;
+                  close();
                 } finally {
                   setBusy(null);
                 }
@@ -330,8 +349,7 @@ function UsersBody() {
           return (
             <SecretDialog
               username={d.username}
-              token={d.token}
-              source={d.source}
+              password={d.password}
               onClose={close}
             />
           );
@@ -341,19 +359,32 @@ function UsersBody() {
   );
 }
 
-function TokenCell(props: { user: AdminUser }) {
-  const active = () => props.user.token_expired_at === null;
-  return (
-    <div class="flex flex-col gap-0.5">
-      <Badge variant={active() ? "success" : "secondary"} class="w-fit">
-        {active() ? t(() => m.users_token_active()) : t(() => m.users_token_expired())}
+function StatusCell(props: { user: AdminUser }) {
+  if (props.user.disabled_at !== null && props.user.disabled_at !== undefined) {
+    return (
+      <Badge variant="error" class="w-fit">
+        {t(() => m.users_status_disabled())}
       </Badge>
-      <Show when={!active()}>
-        <span class="text-xs text-muted-foreground">
-          {formatDateTime(fromMicros(props.user.token_expired_at))}
-        </span>
-      </Show>
-    </div>
+    );
+  }
+  if (!props.user.has_password) {
+    return (
+      <Badge variant="outline" class="w-fit">
+        {t(() => m.users_status_api_only())}
+      </Badge>
+    );
+  }
+  if (props.user.must_change_password) {
+    return (
+      <Badge variant="secondary" class="w-fit border-warning-foreground text-warning-foreground">
+        {t(() => m.users_status_must_change())}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="success" class="w-fit">
+      {t(() => m.users_status_active())}
+    </Badge>
   );
 }
 
@@ -373,6 +404,12 @@ function InfoCards() {
 }
 
 function Modal(props: { title: string; onClose: () => void; children: JSX.Element }) {
+  let dialog!: HTMLDivElement;
+  const previousFocus =
+    typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
+  onMount(() => dialog.focus());
+  onCleanup(() => previousFocus?.focus());
+
   return (
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar-bg/80 p-4"
@@ -380,12 +417,42 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
       onClick={props.onClose}
     >
       <div
-        class="flex w-[400px] max-w-full flex-col gap-4 rounded-lg border border-hairline bg-content-bg p-4 shadow-card"
+        ref={dialog}
+        class="flex w-[420px] max-w-full flex-col gap-4 rounded-lg border border-hairline bg-content-bg p-4 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="users-dialog-title"
+        tabindex="-1"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            props.onClose();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            dialog.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            ),
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 class="text-sm font-semibold">{props.title}</h2>
+        <h2 id="users-dialog-title" class="text-sm font-semibold">
+          {props.title}
+        </h2>
         {props.children}
       </div>
     </div>
@@ -394,12 +461,12 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
 
 function CreateUserDialog(props: {
   onClose: () => void;
-  onPepper: () => void;
-  onCreated: (result: UserWithToken) => void;
+  onCreated: (result: UserWithPassword) => void;
 }) {
   const [username, setUsername] = createSignal("");
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
+  const [role, setRole] = createSignal<"root" | "user">("user");
   const [pending, setPending] = createSignal(false);
   const [duplicate, setDuplicate] = createSignal(false);
   const [formError, setFormError] = createSignal<string | null>(null);
@@ -412,7 +479,10 @@ function CreateUserDialog(props: {
     setDuplicate(false);
     setFormError(null);
     try {
-      const input: { username: string; name?: string; email?: string } = { username: value };
+      const input: { username: string; name?: string; email?: string; role: "root" | "user" } = {
+        username: value,
+        role: role(),
+      };
       const nameValue = name().trim();
       const emailValue = email().trim();
       if (nameValue) input.name = nameValue;
@@ -420,10 +490,6 @@ function CreateUserDialog(props: {
       const result = await adminCreateUser(input);
       props.onCreated(result);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 503) {
-        props.onPepper();
-        return;
-      }
       if (error instanceof ApiError && error.status === 409) {
         setDuplicate(true);
         return;
@@ -436,7 +502,7 @@ function CreateUserDialog(props: {
 
   return (
     <Modal title={t(() => m.users_create_title())} onClose={props.onClose}>
-      <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+      <form class="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)}>
         <label class="flex flex-col gap-1.5">
           <span class="text-xs font-medium text-muted-foreground">
             {t(() => m.users_field_username())}
@@ -478,6 +544,19 @@ function CreateUserDialog(props: {
             onInput={(event) => setEmail(event.currentTarget.value)}
           />
         </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-muted-foreground">
+            {t(() => m.users_field_role())}
+          </span>
+          <select
+            class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 text-sm outline-none transition focus-visible:border-primary"
+            value={role()}
+            onChange={(e) => setRole(e.currentTarget.value as "root" | "user")}
+          >
+            <option value="user">{t(() => m.users_role_user())}</option>
+            <option value="root">{t(() => m.users_role_root())}</option>
+          </select>
+        </label>
         <Show when={formError()}>
           {(message) => (
             <p class="text-xs text-destructive" role="alert">
@@ -485,12 +564,106 @@ function CreateUserDialog(props: {
             </p>
           )}
         </Show>
-        <div class="flex justify-end gap-2">
+        <div class="flex justify-end gap-2 pt-2">
           <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
           <Button type="submit" size="sm" disabled={pending() || username().trim().length === 0}>
             {t(() => m.users_create_submit())}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditUserDialog(props: {
+  user: AdminUser;
+  isLastRoot: boolean;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const [name, setName] = createSignal(props.user.name ?? "");
+  const [email, setEmail] = createSignal(props.user.email ?? "");
+  const [role, setRole] = createSignal<"root" | "user">(props.user.role);
+  const [pending, setPending] = createSignal(false);
+  const [formError, setFormError] = createSignal<string | null>(null);
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (pending()) return;
+    setPending(true);
+    setFormError(null);
+    try {
+      await adminUpdateUser(props.user.username, {
+        name: name().trim() || null,
+        email: email().trim() || null,
+        role: role(),
+      });
+      props.onUpdated();
+    } catch (error) {
+      setFormError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Modal title={t(() => m.users_edit_title({ name: props.user.username }))} onClose={props.onClose}>
+      <form class="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)}>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-muted-foreground">
+            {t(() => m.users_field_name())}
+          </span>
+          <Input
+            autocomplete="off"
+            value={name()}
+            onInput={(event) => setName(event.currentTarget.value)}
+          />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-muted-foreground">
+            {t(() => m.users_field_email())}
+          </span>
+          <Input
+            type="email"
+            autocomplete="off"
+            value={email()}
+            onInput={(event) => setEmail(event.currentTarget.value)}
+          />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-muted-foreground">
+            {t(() => m.users_field_role())}
+          </span>
+          <select
+            class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 text-sm outline-none transition focus-visible:border-primary disabled:opacity-60"
+            value={role()}
+            disabled={props.isLastRoot}
+            onChange={(e) => setRole(e.currentTarget.value as "root" | "user")}
+          >
+            <option value="user">{t(() => m.users_role_user())}</option>
+            <option value="root">{t(() => m.users_role_root())}</option>
+          </select>
+          <Show when={props.isLastRoot}>
+            <p class="text-xs text-muted-foreground">
+              {t(() => m.users_last_root_protected())}
+            </p>
+          </Show>
+        </label>
+        <Show when={formError()}>
+          {(message) => (
+            <p class="text-xs text-destructive" role="alert">
+              {message()}
+            </p>
+          )}
+        </Show>
+        <div class="flex justify-end gap-2 pt-2">
+          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+            {t(() => m.users_cancel())}
+          </Button>
+          <Button type="submit" size="sm" disabled={pending()}>
+            {t(() => m.users_edit_submit())}
           </Button>
         </div>
       </form>
@@ -562,15 +735,14 @@ function ConfirmNameDialog(props: {
 
 function SecretDialog(props: {
   username: string;
-  token: string;
-  source: "create" | "rotate";
+  password: string;
   onClose: () => void;
 }) {
   const [copied, setCopied] = createSignal(false);
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(props.token);
+      await navigator.clipboard.writeText(props.password);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -579,16 +751,12 @@ function SecretDialog(props: {
 
   return (
     <Modal
-      title={
-        props.source === "create"
-          ? t(() => m.users_secret_created({ name: props.username }))
-          : t(() => m.users_secret_rotated({ name: props.username }))
-      }
+      title={t(() => m.users_secret_title({ name: props.username }))}
       onClose={props.onClose}
     >
       <p class="text-xs text-muted-foreground">{t(() => m.users_secret_warning())}</p>
       <code class="break-all rounded-md border border-hairline bg-active-item p-2 font-mono text-xs">
-        {props.token}
+        {props.password}
       </code>
       <div class="flex justify-end gap-2">
         <Button size="sm" variant="outline" onClick={() => void copy()}>

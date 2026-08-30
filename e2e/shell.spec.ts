@@ -10,9 +10,9 @@ import { app, appUrl } from "./app-path";
 // fazem sentido (busca por paleta, navegar até um documento) foram preservados
 // aqui em termos da IA nova.
 //
-// No modo fixtures a sonda de tier conclui como `anonymous-admin`: as telas
-// administrativas existem, menos Usuários (UserManagement é root-only).
-// A SPA carrega no baseLocale "en", então os seletores usam os textos ingleses.
+// No modo fixtures a sonda de tier conclui como `root`, permitindo validar a
+// navegação administrativa completa. A SPA carrega no baseLocale "en", então
+// os seletores usam os textos ingleses.
 //
 // Os caminhos aqui NÃO levam o prefixo `/web`: o basepath do router vem do
 // `<base href>` que o engine injeta, e o `vite dev` serve o index.html sem essa
@@ -31,11 +31,9 @@ test("sidebar de servidor mostra os grupos e itens do protótipo", async ({ page
   await expect(nav.getByRole("link", { name: "Consumers" })).toBeVisible();
 });
 
-// `anonymous-admin` não pode gerenciar usuários: o engine devolve 401 em
-// /admin/users mesmo respondendo 200 em /admin/status.
-test("modo sem operador não oferece Usuários", async ({ page }) => {
+test("root oferece gerenciamento de Usuários", async ({ page }) => {
   await page.goto(app("/"));
-  await expect(page.getByRole("link", { name: "Users", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Users", exact: true })).toBeVisible();
 });
 
 test("navega para uma tela administrativa pela sidebar", async ({ page }) => {
@@ -44,6 +42,27 @@ test("navega para uma tela administrativa pela sidebar", async ({ page }) => {
   await expect(page).toHaveURL(appUrl("/access"));
 });
 
+
+test("menu de troca de senha abre o formulário autenticado", async ({ page }) => {
+  await page.goto(app("/"));
+  await page.getByRole("button", { name: /Root Operator/i }).click();
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page).toHaveURL(appUrl("/login"));
+  await expect(page.getByLabel("Current password")).toBeVisible();
+});
+
+test("mobile oferece navegação por drawer e fecha com Escape", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(app("/"));
+
+  const nav = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(nav).not.toBeVisible();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(nav).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Access" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(nav).not.toBeVisible();
+});
 test("entrar num escopo troca a sidebar e mostra a back row", async ({ page }) => {
   await page.goto(app("/s/centralit/smart-city"));
 

@@ -23,7 +23,7 @@ import type {
   WorkspaceSummary,
 } from "~/lib/types";
 
-import { authHeaders } from "~/lib/auth";
+import { csrfHeaders } from "~/lib/auth";
 import { API_ROOT, readBasePath } from "~/lib/base-path";
 
 // URL de logout da web. Limpa a sessão do oauth2-proxy (`/oauth2/sign_out`) e
@@ -95,14 +95,17 @@ export class ApiError extends Error {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
-    // Bearer quando houver chave: `/api/v1` é read-only e ignora auth em
-    // engine sem token, mas num engine com auth é o que separa leitura
-    // pública de leitura atribuída (briefing/handoffs/sessions por dono).
-    headers: { Accept: "application/json", ...authHeaders(), ...init?.headers },
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(isMutation ? csrfHeaders() : {}),
+      ...init?.headers,
+    },
   });
-
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {

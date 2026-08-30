@@ -221,21 +221,46 @@ export type DecisionOutcome =
   | { status: "conflict" }
   | { status: "rejected" };
 
-/** Tabela `users`: sem papel, sem workspace — o schema não tem esses campos.
- *  `token_expired_at === null` ⇒ token ativo. Timestamps em MICROssegundos. */
+/** Tabela `users`: pessoas com papel root/user, senha e estado humano.
+ *  Timestamps em MICROssegundos. */
 export interface AdminUser {
   id: string;
   username: string;
   name: string | null;
   email: string | null;
+  role: "root" | "user";
+  must_change_password: boolean;
+  has_password: boolean;
+  disabled_at: number | null;
   created_at: number;
-  last_seen_at: number | null;
-  token_expired_at: number | null;
+  last_used_at: number | null;
+  last_seen_at?: number | null;
 }
 
-/** `POST /admin/users` e `.../rotate-token`: token em claro **uma única vez**. */
-export interface UserWithToken {
+/** `POST /admin/users` e `.../reset-password`: senha temporária em claro **uma única vez**. */
+export interface UserWithPassword {
   user: AdminUser;
+  temporary_password?: string;
+  password?: string;
+}
+
+export type UserWithToken = UserWithPassword;
+
+/** Credencial programática nativa (`aim_`) do engine. */
+export interface ApiCredential {
+  id: string;
+  user_id: string;
+  label: string;
+  preview: string | null;
+  created_at: number;
+  last_used_at: number | null;
+  expires_at: number | null;
+  revoked_at?: number | null;
+}
+
+/** `POST /admin/api-credentials` e `.../rotate`: segredo em claro (`aim_…`) **uma única vez**. */
+export interface CreatedApiCredential {
+  credential: ApiCredential;
   token: string;
 }
 

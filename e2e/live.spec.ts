@@ -6,28 +6,31 @@ import { app } from "./app-path";
 // suíte inteira é ignorada, então `npm run test:e2e` continua determinístico em
 // modo fixtures.
 //   E2E_BASE_URL=http://127.0.0.1:49374/web \
-//   E2E_ADMIN_TOKEN=<chave que abre /admin e /keys> \
-//   E2E_USER_TOKEN=<chave de usuário, opcional> \
+//   E2E_ROOT_USER=root \
+//   E2E_ROOT_PASSWORD=<senha do root> \
 //   E2E_SCOPE_PATH=/s/default/scratch \
 //   npx playwright test e2e/live.spec.ts
 //
-// Credenciais NUNCA ficam no arquivo: um bearer literal comitado vaza no
-// histórico do git e é descoberto pela suíte default sem ninguém pedir.
-const ADMIN_TOKEN = process.env.E2E_ADMIN_TOKEN ?? "";
-const USER_TOKEN = process.env.E2E_USER_TOKEN ?? "";
+// Credenciais NUNCA ficam no arquivo: senhas literais comitadas vazam no
+// histórico do git e são descobertas pela suíte default sem ninguém pedir.
+const ROOT_USER = process.env.E2E_ROOT_USER ?? "root";
+const ROOT_PASSWORD = process.env.E2E_ROOT_PASSWORD ?? "";
+const USER_NAME = process.env.E2E_USER_NAME ?? "";
+const USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? "";
 const SCOPE_PATH = process.env.E2E_SCOPE_PATH ?? "/s/default/scratch";
 
 test.describe("engine real", () => {
   test.skip(
-    !process.env.E2E_BASE_URL || !ADMIN_TOKEN,
-    "precisa de E2E_BASE_URL + E2E_ADMIN_TOKEN",
+    !process.env.E2E_BASE_URL || !ROOT_PASSWORD,
+    "precisa de E2E_BASE_URL + E2E_ROOT_PASSWORD",
   );
 
-  test("admin vê contagens, workspaces e usuários reais", async ({ page }) => {
-    await page.addInitScript(
-      ([token]) => window.localStorage.setItem("ai-memory-ui.token", token),
-      [ADMIN_TOKEN],
-    );
+  test("root vê contagens, workspaces e usuários reais", async ({ page }) => {
+    await page.goto(app("/login"));
+    await page.getByTestId("login-username").fill(ROOT_USER);
+    await page.getByTestId("login-password").fill(ROOT_PASSWORD);
+    await page.getByTestId("login-submit").click();
+    await expect(page).not.toHaveURL(/\/login\/?$/);
 
     await page.goto(app("/"));
     await expect(page.getByRole("navigation").getByRole("link", { name: /Users|Usuários/ })).toBeVisible();
@@ -41,10 +44,11 @@ test.describe("engine real", () => {
   });
 
   test("escopo lista páginas e abre o leitor", async ({ page }) => {
-    await page.addInitScript(
-      ([token]) => window.localStorage.setItem("ai-memory-ui.token", token),
-      [ADMIN_TOKEN],
-    );
+    await page.goto(app("/login"));
+    await page.getByTestId("login-username").fill(ROOT_USER);
+    await page.getByTestId("login-password").fill(ROOT_PASSWORD);
+    await page.getByTestId("login-submit").click();
+    await expect(page).not.toHaveURL(/\/login\/?$/);
 
     await page.goto(app(SCOPE_PATH));
     const firstPage = page.getByRole("link").filter({ hasText: ".md" }).first();
@@ -55,27 +59,25 @@ test.describe("engine real", () => {
     await expect(page.getByText(/Frontmatter/i).first()).toBeVisible();
   });
 
-  test("token de usuário do banco não recebe área administrativa", async ({ page }) => {
-    test.skip(!USER_TOKEN, "precisa de E2E_USER_TOKEN");
-    await page.addInitScript(
-      ([token]) => window.localStorage.setItem("ai-memory-ui.token", token),
-      [USER_TOKEN],
-    );
+  test("usuário comum não recebe área de administração de usuários", async ({ page }) => {
+    test.skip(!USER_PASSWORD, "precisa de E2E_USER_PASSWORD");
+    await page.goto(app("/login"));
+    await page.getByTestId("login-username").fill(USER_NAME || "user");
+    await page.getByTestId("login-password").fill(USER_PASSWORD);
+    await page.getByTestId("login-submit").click();
+    await expect(page).not.toHaveURL(/\/login\/?$/);
 
     await page.goto(app("/"));
     const nav = page.getByRole("navigation");
     await expect(nav.getByRole("link", { name: /^Users$|^Usuários$/ })).toHaveCount(0);
-    await expect(nav.getByText(/Administration|Administração/)).toHaveCount(0);
   });
 
-  test("sem chave vê o login prototipado", async ({ page }) => {
+  test("sem sessão vê o AuthFrame de login", async ({ page }) => {
     await page.goto(app("/ops"));
 
     await expect(page).toHaveURL(/\/login\/?$/);
-    await expect(
-      page.getByRole("heading", { name: /Access key|Chave de acesso|Clave de acceso/ }),
-    ).toBeVisible();
-    await expect(page.getByTestId("login-key")).toBeVisible();
+    await expect(page.getByTestId("login-username")).toBeVisible();
+    await expect(page.getByTestId("login-password")).toBeVisible();
     await expect(page.getByTestId("login-submit")).toBeDisabled();
   });
 });

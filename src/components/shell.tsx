@@ -9,6 +9,7 @@ import {
   Database,
   KeyRound,
   LayoutGrid,
+  Menu,
   Layers,
   Lock,
   LogOut,
@@ -20,19 +21,18 @@ import {
   User as UserIcon,
   Waypoints,
 } from "lucide-solid";
-import { For, Show, createMemo, createSignal, onMount, type JSX } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 
 import { useShellSearch } from "~/components/shell-search";
+import { LanguageSwitcher, ThemeToggle, userInitials } from "~/components/user-menu";
 import {
-  LanguageSwitcher,
-  ThemeToggle,
-  currentUser,
-  ensureCurrentUser,
-  userDisplayName,
-  userInitials,
-} from "~/components/user-menu";
-import { buildLogoutUrl } from "~/lib/api";
-import { isAdminTier, maskedToken, signOut, tier, type Tier } from "~/lib/auth";
+  authMe,
+  canManageUsers,
+  isAdminTier,
+  signOut,
+  tier,
+  type Tier,
+} from "~/lib/auth";
 import { t } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
@@ -105,13 +105,13 @@ export function serverGroups(current: Tier): NavGroup[] {
   // O grupo Administração inteiro depende de Admin. Para `user`, `anonymous`
   // e degraus indeterminados ele nem é montado.
   if (admin) {
-    const administration: NavItem[] = [
-      { icon: Lock, label: () => m.nav_access(), to: "/access" },
-    ];
-    // `UserManagement` é root-only inclusive no modo anônimo: com
-    // `anonymous-admin` a tela de Usuários responderia 401.
-    if (current === "admin") {
-      administration.push({ icon: UserIcon, label: () => m.nav_users(), to: "/users" });
+    const administration: NavItem[] = [];
+    // `UserManagement` é root-only inclusive no modo anônimo.
+    if (canManageUsers(current)) {
+      administration.push(
+        { icon: Lock, label: () => m.nav_access(), to: "/access" },
+        { icon: UserIcon, label: () => m.nav_users(), to: "/users" },
+      );
     }
     administration.push(
       { icon: Cable, label: () => m.nav_consumers(), to: "/consumers" },
@@ -191,7 +191,7 @@ export function scopeGroups(scope: ScopeRef, current: Tier, pending?: number): N
   return groups;
 }
 
-function NavRow(props: { item: NavItem }) {
+function NavRow(props: { item: NavItem; onNavigate?: () => void }) {
   const location = useLocation();
   // Ativo = match exato. Prefixo marcaria a Wiki como ativa em toda subrota do
   // escopo (`/sessions`, `/pending`), que é justamente o que o protótipo evita.
@@ -216,6 +216,7 @@ function NavRow(props: { item: NavItem }) {
           : "text-muted-foreground hover:bg-hover hover:text-foreground",
       )}
       aria-current={active() ? "page" : undefined}
+      onClick={props.onNavigate}
     >
       {props.item.icon({ size: 16, class: "shrink-0" })}
       <span class="min-w-0 flex-1 truncate">{t(props.item.label)}</span>
@@ -230,17 +231,12 @@ function NavRow(props: { item: NavItem }) {
   );
 }
 
-// Rodapé da sidebar. Mostra o PAPEL (o que o operador pode fazer), nunca o
-// mecanismo de autenticação — decisão de design: "bearer estático" é detalhe de
-// infraestrutura e vive na tela Acesso, não no rodapé.
-//
-// O engine não expõe identidade do chamador (não há whoami), então o nome sai
-// da sessão do oauth2-proxy quando existe; senão fica o sufixo mascarado da
-// chave, que ao menos diz *qual* credencial está em uso.
+// Rodapé da sidebar. Mostra o papel humano e a identidade retornada por
+// `/auth/me`; detalhes do mecanismo de autenticação ficam na tela Acesso.
 function roleLabel(current: Tier): string {
   switch (current) {
-    case "admin":
-      return m.role_admin();
+    case "root":
+      return m.role_root();
     case "anonymous-admin":
       return m.role_anonymous_admin();
     case "user":
@@ -253,25 +249,18 @@ function roleLabel(current: Tier): string {
 function UserMenu() {
   const [open, setOpen] = createSignal(false);
   const navigate = useNavigate();
-  onMount(ensureCurrentUser);
 
-  const proxyName = () => userDisplayName(currentUser());
-  const label = () => proxyName() || maskedToken() || "—";
-  const initials = () => (proxyName() ? userInitials(proxyName()) : "?");
+  const label = () => authMe()?.name || authMe()?.username || "—";
+  const initials = () => {
+    const l = label();
+    return l !== "—" ? userInitials(l) : "?";
+  };
 
   const doSignOut = async () => {
     setOpen(false);
-    signOut();
-    // Com oauth2-proxy na frente, encerrar só a chave local deixaria a sessão
-    // SSO viva e o próximo acesso re-logaria em silêncio.
-    const url = await buildLogoutUrl();
-    if (proxyName()) {
-      window.location.assign(url);
-      return;
-    }
+    await signOut();
     navigate({ to: "/login" });
   };
-
   return (
     <div class="relative">
       <button
@@ -297,11 +286,12 @@ function UserMenu() {
             type="button"
             onClick={() => {
               setOpen(false);
+              sessionStorage.setItem("ai-memory-ui.change-password", "1");
               navigate({ to: "/login" });
             }}
           >
             <KeyRound class="shrink-0 text-muted-foreground" size={15} />
-            <span class="truncate">{t(() => m.user_menu_switch_key())}</span>
+            <span class="truncate">{t(() => m.user_menu_change_password())}</span>
           </button>
           <button
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
@@ -326,10 +316,36 @@ export function Shell(props: ShellProps) {
   // A busca vive no shell: um único estado para o gatilho da sidebar e para o
   // atalho ⌘K, em vez de cada tela montar a própria paleta.
   const search = useShellSearch();
+  const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
+  onMount(() => {
+    const closeMobileNav = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    window.addEventListener("keydown", closeMobileNav);
+    onCleanup(() => window.removeEventListener("keydown", closeMobileNav));
+  });
+
 
   return (
     <div class="flex h-screen min-h-0 bg-sidebar-bg text-foreground">
-      <nav class="flex w-[220px] shrink-0 flex-col gap-4 p-4 max-lg:hidden">
+      <Show when={mobileNavOpen()}>
+        <button
+          class="fixed inset-0 z-40 bg-sidebar-bg/70 lg:hidden"
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      </Show>
+      <nav
+        class={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-[220px] shrink-0 flex-col gap-4 bg-sidebar-bg p-4 transition-transform lg:visible lg:static lg:translate-x-0",
+          mobileNavOpen() ? "visible translate-x-0" : "invisible -translate-x-full",
+        )}
+        aria-label="Primary navigation"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setMobileNavOpen(false);
+        }}
+      >
         <div class="flex items-center justify-between gap-2">
           {/* A marca não navega: é rótulo do produto, não botão de início. */}
           <span class="text-sm font-semibold">{t(() => m.brand_name())}</span>
@@ -374,7 +390,9 @@ export function Shell(props: ShellProps) {
                     </span>
                   )}
                 </Show>
-                <For each={group.items}>{(item) => <NavRow item={item} />}</For>
+                <For each={group.items}>
+                  {(item) => <NavRow item={item} onNavigate={() => setMobileNavOpen(false)} />}
+                </For>
               </div>
             )}
           </For>
@@ -386,7 +404,18 @@ export function Shell(props: ShellProps) {
       <div class="flex min-h-0 min-w-0 flex-1 flex-col p-2">
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-hairline bg-content-bg shadow-card">
           <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-hairline px-4">
-            <div class="flex min-w-0 items-center gap-2 text-sm font-medium">{props.heading}</div>
+            <div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+              <button
+                class="-ml-1 rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                type="button"
+                aria-label="Open navigation"
+                aria-expanded={mobileNavOpen()}
+                onClick={() => setMobileNavOpen(true)}
+              >
+                <Menu size={18} />
+              </button>
+              {props.heading}
+            </div>
             <div class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
               {props.actions}
             </div>

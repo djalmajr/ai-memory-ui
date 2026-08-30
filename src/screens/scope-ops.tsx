@@ -98,12 +98,6 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
           <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.ops_admin_only())} />
         }
       >
-        {/* Cookie autentica só GET: explicar por que as ações estão travadas. */}
-        <Show when={isAdminTier(tier()) && !canMutate(tier())}>
-          <p class="rounded-md border border-hairline bg-muted/40 p-4 text-xs text-muted-foreground">
-            {t(() => m.mutation_needs_key())}
-          </p>
-        </Show>
         <section class="flex flex-col gap-1 rounded-lg border border-hairline p-4">
           <h2 class="text-sm font-medium">{t(() => m.ops_scope_card())}</h2>
           <p class="font-mono text-sm">

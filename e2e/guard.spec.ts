@@ -9,32 +9,25 @@ declare global {
   }
 }
 
-// A5 — proteção de rota. Roda contra um dev server SEM fixtures
-// (`E2E_BASE_URL=http://127.0.0.1:5210`), porque no modo fixtures a sonda de
-// tier é curto-circuitada e nunca produz `unauthenticated`.
-//
-// As duas rotas que a sonda usa são interceptadas com 401 (em `text/plain`,
-// como o engine responde de verdade) para reproduzir "chave recusada / ausente".
+// A5 — proteção de rota. O preview com fixtures continua usando requests reais
+// de `/auth/me` quando o teste ativa `fixture-auth-network`, permitindo que o
+// Playwright cubra 401/500 sem depender de um engine externo.
 test.describe("guard", () => {
-  test.skip(
-    !process.env.E2E_BASE_URL,
-    "precisa de E2E_BASE_URL apontando para um dev server sem fixtures",
-  );
 
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.clear());
-    await page.route("**/api/v1/workspaces", (route) =>
-      route.fulfill({ status: 401, contentType: "text/plain", body: "auth required\n" }),
-    );
-    await page.route("**/admin/status", (route) =>
-      route.fulfill({ status: 401, contentType: "text/plain", body: "auth required\n" }),
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+      window.localStorage.setItem("ai-memory-ui.fixture-auth-network", "1");
+    });
+    await page.route("**/auth/me", (route) =>
+      route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "Unauthorized" }) }),
     );
   });
 
   test("rota protegida sem credencial cai no login", async ({ page }) => {
     await page.goto(app("/workspaces"));
     await expect(page).toHaveURL(appUrl("/login"));
-    await expect(page.getByTestId("login-key")).toBeVisible();
+    await expect(page.getByTestId("login-username")).toBeVisible();
   });
 
   test("raiz sem credencial cai no login", async ({ page }) => {
@@ -44,27 +37,19 @@ test.describe("guard", () => {
 
   test("o próprio login não entra em loop de redirect", async ({ page }) => {
     await page.goto(app("/login"));
-    await expect(page.getByTestId("login-key")).toBeVisible();
+    await expect(page.getByTestId("login-username")).toBeVisible();
     await expect(page).toHaveURL(appUrl("/login"));
   });
 
-  // Um 500 não é veredito sobre a credencial: a chave é preservada e o operador
-  // não é expulso da rota.
-  test("engine com 500 não expulsa quem tem chave", async ({ page }) => {
-    await page.addInitScript(() =>
-      window.localStorage.setItem("ai-memory-ui.token", "amk_valida"),
-    );
-    await page.route("**/api/v1/workspaces", (route) =>
-      route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
-    );
-    await page.route("**/admin/status", (route) =>
+  // Um 500 não é veredito sobre a credencial: o operador não é expulso para o login
+  // e cada tela pode apresentar seu erro.
+  test("engine com 500 não expulsa para o login", async ({ page }) => {
+    await page.route("**/auth/me", (route) =>
       route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
     );
 
     await page.goto(app("/workspaces"));
     await expect(page).not.toHaveURL(appUrl("/login"));
-    const stored = await page.evaluate(() => window.localStorage.getItem("ai-memory-ui.token"));
-    expect(stored).toBe("amk_valida");
   });
 
   // Um redirect que chega tarde ainda pinta a tela protegida por um instante e
@@ -85,9 +70,20 @@ test.describe("guard", () => {
 
     await page.goto(app("/workspaces"));
     await expect(page).toHaveURL(appUrl("/login"));
-    await expect(page.getByTestId("login-key")).toBeVisible();
+    await expect(page.getByTestId("login-username")).toBeVisible();
 
     const flashed = await page.evaluate(() => window.__sawShell);
     expect(flashed).toBe(false);
+  });
+
+  test("falha 5xx no login aparece como engine indisponível", async ({ page }) => {
+    await page.route("**/auth/login", (route) =>
+      route.fulfill({ status: 503, contentType: "text/plain", body: "unavailable" }),
+    );
+    await page.goto(app("/login"));
+    await page.getByTestId("login-username").fill("root");
+    await page.getByTestId("login-password").fill("correct_password_123");
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("login-error")).toContainText(/Could not reach the server/i);
   });
 });

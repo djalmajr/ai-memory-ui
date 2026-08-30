@@ -1,5 +1,5 @@
 import { ApiError } from "~/lib/api";
-import { authHeaders } from "~/lib/auth";
+import { csrfHeaders } from "~/lib/auth";
 import { API_ROOT } from "~/lib/base-path";
 
 // Cliente de `/api/v1/.../sessions` e `/handoffs`. `api.ts` não cobre essas
@@ -123,11 +123,17 @@ export interface ListHandoffsOptions {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
-    headers: { Accept: "application/json", ...authHeaders(), ...init?.headers },
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(isMutation ? csrfHeaders() : {}),
+      ...init?.headers,
+    },
   });
-
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response));
   }

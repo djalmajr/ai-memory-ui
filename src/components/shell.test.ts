@@ -15,11 +15,11 @@ const SCOPE = { workspace: "default", project: "scratch" };
 
 const SERVER_PUBLIC = ["/", "/workspaces", "/graph"];
 const SERVER_MONITORING = ["/sessions", "/activity", "/audit"];
-const SERVER_ADMIN = ["/access", "/consumers", "/ops", "/backups", "/config"];
+const SERVER_ADMIN = ["/consumers", "/ops", "/backups", "/config"];
 
 describe("sidebar de servidor", () => {
-  it("admin vê tudo, com Usuários", () => {
-    expect(targets(serverGroups("admin"))).toEqual([
+  it("root vê tudo, com Usuários", () => {
+    expect(targets(serverGroups("root"))).toEqual([
       "/",
       "/workspaces",
       ...SERVER_MONITORING,
@@ -32,10 +32,9 @@ describe("sidebar de servidor", () => {
       "/config",
     ]);
   });
-
-  // `Capability::UserManagement` é root-only inclusive no modo anônimo: mesmo
-  // com /admin/status respondendo 200, /admin/users devolve 401.
-  it("anonymous-admin vê a administração menos Usuários", () => {
+  // `Capability::UserManagement` é root-only inclusive no modo anônimo:
+  // credenciais nativas e usuários não podem ser oferecidos sem root humano.
+  it("anonymous-admin não vê Acesso nem Usuários", () => {
     expect(targets(serverGroups("anonymous-admin"))).toEqual([
       "/",
       "/workspaces",
@@ -63,8 +62,8 @@ describe("sidebar de servidor", () => {
 });
 
 describe("sidebar de escopo", () => {
-  it("admin vê wiki, sessões, handoffs, pending e operações", () => {
-    expect(targets(scopeGroups(SCOPE, "admin"))).toEqual([
+  it("root vê wiki, sessões, handoffs, pending e operações", () => {
+    expect(targets(scopeGroups(SCOPE, "root"))).toEqual([
       "/s/$workspace/$project",
       "/s/$workspace/$project/sessions",
       "/s/$workspace/$project/handoffs",
@@ -73,9 +72,9 @@ describe("sidebar de escopo", () => {
     ]);
   });
 
-  it("anonymous-admin tem a mesma sidebar de escopo do admin", () => {
+  it("anonymous-admin tem a mesma sidebar de escopo do root", () => {
     expect(targets(scopeGroups(SCOPE, "anonymous-admin"))).toEqual(
-      targets(scopeGroups(SCOPE, "admin")),
+      targets(scopeGroups(SCOPE, "root")),
     );
   });
 
@@ -96,13 +95,15 @@ describe("sidebar de escopo", () => {
 
   it("não monta grupo de manutenção fora do admin", () => {
     expect(scopeGroups(SCOPE, "user")).toHaveLength(1);
-    expect(scopeGroups(SCOPE, "admin")).toHaveLength(2);
+    expect(scopeGroups(SCOPE, "root")).toHaveLength(2);
   });
 
   it("carrega os params do escopo em cada item do escopo", () => {
-    for (const group of scopeGroups(SCOPE, "admin")) {
+    for (const group of scopeGroups(SCOPE, "root")) {
       for (const item of group.items) {
-        expect(item.params).toEqual({ workspace: "default", project: "scratch" });
+        if (item.to.includes("$workspace")) {
+          expect(item.params).toEqual(SCOPE);
+        }
       }
     }
   });
@@ -116,7 +117,7 @@ describe("sidebar de escopo", () => {
   it("mostra a contagem da fila só quando informada", () => {
     const find = (groups: NavGroup[]) =>
       groups[0].items.find((item) => item.to === "/s/$workspace/$project/pending");
-    expect(find(scopeGroups(SCOPE, "admin", 3))?.badge?.()).toBe(3);
-    expect(find(scopeGroups(SCOPE, "admin"))?.badge?.()).toBeUndefined();
+    expect(find(scopeGroups(SCOPE, "root", 3))?.badge?.()).toBe(3);
+    expect(find(scopeGroups(SCOPE, "root"))?.badge?.()).toBeUndefined();
   });
 });
