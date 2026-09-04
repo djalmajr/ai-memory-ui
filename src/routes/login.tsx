@@ -1,9 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
-import { BookOpen, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-solid";
+import { Brain, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-solid";
 import { Match, Show, Switch, createSignal, onMount } from "solid-js";
 
 import { LanguageSwitcher, ThemeToggle } from "~/components/user-menu";
-import { adminStatus } from "~/lib/admin-api";
 import {
   authMe,
   changePassword,
@@ -53,8 +52,6 @@ function AuthFrame() {
   const [recoverySuccess, setRecoverySuccess] = createSignal(false);
   const [recovering, setRecovering] = createSignal(false);
 
-  const [version, setVersion] = createSignal<string | null>(null);
-
   onMount(() => {
     sessionStorage.removeItem("ai-memory-ui.change-password");
     void ensureTier().then((currentTier) => {
@@ -68,10 +65,6 @@ function AuthFrame() {
         navigate({ to: "/" });
       }
     });
-
-    void adminStatus()
-      .then((status) => setVersion(status.version))
-      .catch(() => setVersion(null));
   });
 
   const showPasswordChange = () =>
@@ -201,7 +194,7 @@ function AuthFrame() {
           <div class="flex items-start justify-between gap-3 border-b border-hairline pb-4">
             <div class="flex items-center gap-3 min-w-0">
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-                <BookOpen size={20} />
+                <Brain size={20} />
               </div>
               <div class="flex flex-col min-w-0">
                 <h1 class="truncate text-sm font-semibold">{titleText()}</h1>
@@ -571,17 +564,9 @@ function AuthFrame() {
                     </span>
                   </button>
 
-                  <div class="flex items-center gap-2 pt-2">
-                    <span class="h-px flex-1 bg-hairline" />
-                    <span class="text-xs font-medium tracking-wide text-muted-foreground">
-                      {t(() => m.login_recovery_divider())}
-                    </span>
-                    <span class="h-px flex-1 bg-hairline" />
-                  </div>
-
                   <button
                     type="button"
-                    class="text-center text-xs text-muted-foreground transition hover:text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                    class="text-center text-xs text-muted-foreground transition hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
                     data-testid="recovery-trigger"
                     onClick={() => {
                       setMode("recovery");
@@ -595,14 +580,6 @@ function AuthFrame() {
             </Switch>
           </div>
         </div>
-
-        {/* Rodapé sutil com host e versão */}
-        <footer class="p-4 text-center text-xs text-muted-foreground" data-testid="login-footer">
-          <span class="font-mono">{typeof location === "undefined" ? "" : location.host}</span>
-          <Show when={version()}>
-            {(v) => <span class="font-mono"> · v{v()}</span>}
-          </Show>
-        </footer>
       </div>
     </div>
   );

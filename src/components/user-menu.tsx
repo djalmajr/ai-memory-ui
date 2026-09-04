@@ -1,3 +1,4 @@
+import * as PopoverPrimitive from "@kobalte/core/popover";
 import { LogOut, Moon, Sun } from "lucide-solid";
 import { For, Show, createSignal, onMount } from "solid-js";
 
@@ -20,22 +21,23 @@ export const localeFlags: Record<Locale, string> = {
   "pt-BR": "🇧🇷",
 };
 
+// Popover de idioma no Kobalte (mesmo padrão do cascader): conteúdo em portal
+// no <body> — nenhum contêiner o corta — e posicionamento com flip/slide, que
+// o mantém sempre visível perto das bordas da janela.
 export function LanguageSwitcher() {
   const [open, setOpen] = createSignal(false);
   return (
-    <div class="relative">
-      <button
+    <PopoverPrimitive.Root gutter={4} open={open()} placement="bottom-end" onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger
         aria-label="Idioma"
         class="grid size-9 place-items-center rounded-md text-lg outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="language-switcher"
         type="button"
-        onClick={() => setOpen((value) => !value)}
       >
         {localeFlags[useLocale()]}
-      </button>
-      <Show when={open()}>
-        <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div class="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content class="z-50 w-40 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0">
           <For each={locales}>
             {(loc) => (
               <button
@@ -52,9 +54,9 @@ export function LanguageSwitcher() {
               </button>
             )}
           </For>
-        </div>
-      </Show>
-    </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 

@@ -3,6 +3,7 @@ import {
   Activity,
   Archive,
   BookOpen,
+  Brain,
   Cable,
   ChevronLeft,
   Clock,
@@ -13,6 +14,7 @@ import {
   Layers,
   Lock,
   LogOut,
+  PanelLeft,
   PencilLine,
   Repeat2,
   Rows3,
@@ -191,7 +193,7 @@ export function scopeGroups(scope: ScopeRef, current: Tier, pending?: number): N
   return groups;
 }
 
-function NavRow(props: { item: NavItem; onNavigate?: () => void }) {
+function NavRow(props: { collapsed?: boolean; item: NavItem; onNavigate?: () => void }) {
   const location = useLocation();
   // Ativo = match exato. Prefixo marcaria a Wiki como ativa em toda subrota do
   // escopo (`/sessions`, `/pending`), que é justamente o que o protótipo evita.
@@ -209,18 +211,23 @@ function NavRow(props: { item: NavItem; onNavigate?: () => void }) {
       to={props.item.to}
       params={props.item.params}
       class={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition",
+        "flex items-center rounded-md text-sm outline-none transition",
+        props.collapsed ? "justify-center p-1.5" : "gap-2 px-2 py-1.5",
         "focus-visible:ring-2 focus-visible:ring-ring",
         active()
           ? "bg-active-item font-medium text-foreground"
           : "text-muted-foreground hover:bg-hover hover:text-foreground",
       )}
       aria-current={active() ? "page" : undefined}
+      aria-label={props.collapsed ? t(props.item.label) : undefined}
+      title={props.collapsed ? t(props.item.label) : undefined}
       onClick={props.onNavigate}
     >
       {props.item.icon({ size: 16, class: "shrink-0" })}
-      <span class="min-w-0 flex-1 truncate">{t(props.item.label)}</span>
-      <Show when={props.item.badge?.()}>
+      <Show when={!props.collapsed}>
+        <span class="min-w-0 flex-1 truncate">{t(props.item.label)}</span>
+      </Show>
+      <Show when={!props.collapsed && props.item.badge?.()}>
         {(count) => (
           <span class="shrink-0 rounded bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground">
             {count()}
@@ -246,7 +253,7 @@ function roleLabel(current: Tier): string {
   }
 }
 
-function UserMenu() {
+function UserMenu(props: { collapsed?: boolean }) {
   const [open, setOpen] = createSignal(false);
   const navigate = useNavigate();
 
@@ -264,19 +271,26 @@ function UserMenu() {
   return (
     <div class="relative">
       <button
-        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none transition hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+        class={cn(
+          "flex w-full items-center rounded-md py-1.5 text-left outline-none transition hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+          props.collapsed ? "justify-center px-0" : "gap-2 px-2",
+        )}
         type="button"
+        aria-label={props.collapsed ? label() : undefined}
+        title={props.collapsed ? label() : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         <span class="grid size-7 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
           {initials()}
         </span>
+        <Show when={!props.collapsed}>
         <span class="flex min-w-0 flex-1 flex-col leading-tight">
           <span class="truncate text-sm" title={label()}>
             {label()}
           </span>
           <span class="truncate text-xs text-muted-foreground">{t(() => roleLabel(tier()))}</span>
         </span>
+        </Show>
       </button>
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
@@ -307,6 +321,110 @@ function UserMenu() {
   );
 }
 
+// Conteúdo da sidebar, compartilhado entre o painel fixo (desktop) e o
+// overlay móvel — mesma navegação, dois contêineres.
+function SidebarContent(props: {
+  /** Modo ícones (painel desktop colapsado): esconde rótulos e grupos. */
+  collapsed?: boolean;
+  groups: NavGroup[];
+  level: ShellProps["level"];
+  scope?: ScopeRef;
+  /** Sufixo do testid da busca — a cópia móvel usa um id próprio para não colidir com a do painel desktop. */
+  searchTestId: string;
+  onSearch: () => void;
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
+      <div class={cn("flex items-center gap-2", props.collapsed ? "justify-center" : "justify-between")}>
+        <Show
+          fallback={<Brain aria-label={t(() => m.brand_name())} class="text-primary" size={18} />}
+          when={!props.collapsed}
+        >
+          {/* A marca não navega: é rótulo do produto, não botão de início. */}
+          <span class="text-sm font-semibold">{t(() => m.brand_name())}</span>
+          <div class="flex items-center gap-0.5">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
+        </Show>
+      </div>
+
+      <button
+        class={cn(
+          "flex items-center rounded-md border border-hairline bg-content-bg py-1.5 text-left text-sm text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          props.collapsed ? "justify-center px-0" : "gap-2 px-2",
+        )}
+        data-testid={props.searchTestId}
+        type="button"
+        aria-label={props.collapsed ? t(() => m.search_placeholder()) : undefined}
+        title={props.collapsed ? t(() => m.search_placeholder()) : undefined}
+        onClick={() => props.onSearch()}
+      >
+        <Search class="shrink-0" size={15} />
+        <Show when={!props.collapsed}>
+          <span class="min-w-0 flex-1 truncate">{t(() => m.search_placeholder())}</span>
+        </Show>
+      </button>
+
+      <Show when={props.level === "scope" && props.scope}>
+        {(scope) => (
+          <Link
+            to={isAdminTier(tier()) ? "/workspaces" : "/"}
+            class={cn(
+              "flex items-center rounded-md py-1 text-xs text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              props.collapsed ? "justify-center px-0" : "gap-1.5 px-2",
+            )}
+            aria-label={props.collapsed ? `${scope().workspace}/${scope().project}` : undefined}
+            title={props.collapsed ? `${scope().workspace}/${scope().project}` : undefined}
+          >
+            <ChevronLeft class="shrink-0" size={13} />
+            <Show when={!props.collapsed}>
+              <span class="min-w-0 truncate font-mono">
+                {scope().workspace}/{scope().project}
+              </span>
+            </Show>
+          </Link>
+        )}
+      </Show>
+
+      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <For each={props.groups}>
+          {(group) => (
+            <div class="flex flex-col gap-0.5">
+              <Show when={group.title && !props.collapsed}>
+                {(_) => (
+                  <span class="px-2 pb-1 text-[11px] font-normal uppercase tracking-wide text-muted-foreground/60">
+                    {t(group.title!)}
+                  </span>
+                )}
+              </Show>
+              <For each={group.items}>
+                {(item) => <NavRow collapsed={props.collapsed} item={item} onNavigate={props.onNavigate} />}
+              </For>
+            </div>
+          )}
+        </For>
+      </div>
+
+      <UserMenu collapsed={props.collapsed} />
+    </>
+  );
+}
+
+// Sidebar de largura fixa: 220px expandida, rail de 52px no modo ícones (como
+// no pinar). Redimensionar foi removido por decisão de design — só o estado
+// colapsado persiste entre sessões.
+const SIDEBAR_COLLAPSED_KEY = "ai-memory-ui.sidebar-collapsed";
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false; // storage indisponível — começa expandida
+  }
+}
+
 export function Shell(props: ShellProps) {
   const groups = createMemo(() =>
     props.level === "scope" && props.scope
@@ -325,9 +443,19 @@ export function Shell(props: ShellProps) {
     onCleanup(() => window.removeEventListener("keydown", closeMobileNav));
   });
 
+  const [collapsed, setCollapsed] = createSignal(loadSidebarCollapsed());
+  const toggleCollapsed = () => {
+    const next = !collapsed();
+    setCollapsed(next);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      // storage indisponível — o estado vale só para a sessão
+    }
+  };
 
   return (
-    <div class="flex h-screen min-h-0 bg-sidebar-bg text-foreground">
+    <div class="flex h-screen min-h-0 w-full bg-sidebar-bg text-foreground">
       <Show when={mobileNavOpen()}>
         <button
           class="fixed inset-0 z-40 bg-sidebar-bg/70 lg:hidden"
@@ -336,9 +464,11 @@ export function Shell(props: ShellProps) {
           onClick={() => setMobileNavOpen(false)}
         />
       </Show>
+
+      {/* Sidebar móvel: overlay fixo por cima do conteúdo, sem redimensionar. */}
       <nav
         class={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[220px] shrink-0 flex-col gap-4 bg-sidebar-bg p-4 transition-transform lg:visible lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[220px] flex-col gap-4 bg-sidebar-bg p-4 transition-transform lg:hidden",
           mobileNavOpen() ? "visible translate-x-0" : "invisible -translate-x-full",
         )}
         aria-label="Primary navigation"
@@ -346,59 +476,32 @@ export function Shell(props: ShellProps) {
           if (event.key === "Escape") setMobileNavOpen(false);
         }}
       >
-        <div class="flex items-center justify-between gap-2">
-          {/* A marca não navega: é rótulo do produto, não botão de início. */}
-          <span class="text-sm font-semibold">{t(() => m.brand_name())}</span>
-          <div class="flex items-center gap-0.5">
-            <LanguageSwitcher />
-            <ThemeToggle />
-          </div>
-        </div>
+        <SidebarContent
+          groups={groups()}
+          level={props.level}
+          scope={props.scope}
+          searchTestId="search-trigger-mobile"
+          onSearch={() => search.open()}
+          onNavigate={() => setMobileNavOpen(false)}
+        />
+      </nav>
 
-        <button
-          class="flex items-center gap-2 rounded-md border border-hairline bg-content-bg px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          data-testid="search-trigger"
-          type="button"
-          onClick={() => search.open()}
-        >
-          <Search class="shrink-0" size={15} />
-          <span class="min-w-0 flex-1 truncate">{t(() => m.search_placeholder())}</span>
-        </button>
-
-        <Show when={props.level === "scope" && props.scope}>
-          {(scope) => (
-            <Link
-              to={isAdminTier(tier()) ? "/workspaces" : "/"}
-              class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <ChevronLeft class="shrink-0" size={13} />
-              <span class="min-w-0 truncate font-mono">
-                {scope().workspace}/{scope().project}
-              </span>
-            </Link>
-          )}
-        </Show>
-
-        <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-          <For each={groups()}>
-            {(group) => (
-              <div class="flex flex-col gap-0.5">
-                <Show when={group.title}>
-                  {(title) => (
-                    <span class="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {t(title())}
-                    </span>
-                  )}
-                </Show>
-                <For each={group.items}>
-                  {(item) => <NavRow item={item} onNavigate={() => setMobileNavOpen(false)} />}
-                </For>
-              </div>
-            )}
-          </For>
-        </div>
-
-        <UserMenu />
+      {/* Sidebar desktop: largura fixa; o botão do header alterna o rail de ícones. */}
+      <nav
+        class={cn(
+          "hidden shrink-0 flex-col gap-4 bg-sidebar-bg p-2 pr-0 lg:flex",
+          collapsed() ? "w-[52px]" : "w-[220px]",
+        )}
+        aria-label="Primary navigation"
+      >
+        <SidebarContent
+          collapsed={collapsed()}
+          groups={groups()}
+          level={props.level}
+          scope={props.scope}
+          searchTestId="search-trigger"
+          onSearch={() => search.open()}
+        />
       </nav>
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col p-2">
@@ -413,6 +516,16 @@ export function Shell(props: ShellProps) {
                 onClick={() => setMobileNavOpen(true)}
               >
                 <Menu size={18} />
+              </button>
+              <button
+                class="-ml-1 hidden rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+                type="button"
+                aria-expanded={!collapsed()}
+                aria-label={t(() => m.shell_toggle_sidebar())}
+                title={t(() => m.shell_toggle_sidebar())}
+                onClick={toggleCollapsed}
+              >
+                <PanelLeft size={17} />
               </button>
               {props.heading}
             </div>
