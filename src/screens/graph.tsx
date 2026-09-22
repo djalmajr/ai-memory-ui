@@ -189,7 +189,11 @@ export function GraphScreen() {
     });
 
   return (
-    <Shell heading={<span>{t(() => m.nav_graph())}</span>} level="server">
+    <Shell
+      description={<span>{t(() => m.graph_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_graph())}</span>}
+      level="server"
+    >
       <Show
         fallback={
           <Show

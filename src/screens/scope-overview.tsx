@@ -70,6 +70,7 @@ export function ScopeOverviewScreen(props: { project: string; workspace: string 
 
   return (
     <Shell
+      description={<span>{t(() => m.scope_overview_subtitle())}</span>}
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_overview())} />}
       level="scope"
       pendingCount={pending$.data?.length}

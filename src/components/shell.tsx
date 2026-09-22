@@ -3,8 +3,10 @@ import {
   Activity,
   Archive,
   BookOpen,
+  Brain,
   Cable,
   ChevronLeft,
+  CircleHelp,
   Clock,
   Database,
   KeyRound,
@@ -22,10 +24,14 @@ import {
   Settings2,
   User as UserIcon,
   Waypoints,
+  X,
 } from "~/components/icons";
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import type { JSX } from "@solidjs/web";
+import { For, Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
+import { Portal, type JSX } from "@solidjs/web";
 
+import { adminStatus } from "~/lib/admin-api";
+import { Button } from "~/components/button";
+import { useQuery } from "~/lib/query";
 import { ScrollArea } from "~/components/scroll-area";
 import { useShellSearch } from "~/components/shell-search";
 import { LanguageSwitcher, ThemeToggle, userInitials } from "~/components/user-menu";
@@ -44,7 +50,7 @@ import * as m from "~/paraglide/messages";
 // Shell da área administrativa (protótipo Paper, IA de dois níveis).
 //
 // Estrutura fixa do artboard:
-//   [Sidebar 220px] [Inset 8px [ Card [ Page Header 48px, Body p-4 ] ] ]
+//   [Sidebar 220px | conteúdo encostado, header com borda, body p-4]
 //
 // O nível NÃO vem de dropdown: a sidebar de escopo aparece porque a rota é de
 // escopo (`/s/{ws}/{proj}/...`). Foi decisão de design — um seletor de escopo
@@ -345,35 +351,36 @@ function SidebarContent(props: {
   return (
     <>
       <div class={cn("flex items-center gap-2 px-1", props.collapsed && "justify-center px-0")}>
-        <img
-          alt=""
-          class="size-8 shrink-0"
-          src={`${import.meta.env.BASE_URL}favicon.svg`}
-        />
+        <Brain class="shrink-0 text-foreground" size={22} />
         <Show when={!props.collapsed}>
-          <div class="flex min-w-0 flex-col">
+          <div class="flex min-w-0 flex-1 flex-col">
             <span class="truncate text-sm font-semibold leading-tight">{t(() => m.brand_name())}</span>
             <span class="truncate text-xs leading-tight text-muted-foreground">{t(() => m.brand_subtitle())}</span>
           </div>
+          <button
+            class="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid={props.searchTestId}
+            type="button"
+            aria-label={t(() => m.search_placeholder())}
+            title={t(() => m.search_placeholder())}
+            onClick={() => props.onSearch()}
+          >
+            <Search size={16} />
+          </button>
         </Show>
       </div>
-
-      <button
-        class={cn(
-          "flex items-center rounded-md border border-hairline bg-content-bg py-1.5 text-left text-sm text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-          props.collapsed ? "justify-center px-0" : "gap-2 px-2",
-        )}
-        data-testid={props.searchTestId}
-        type="button"
-        aria-label={props.collapsed ? t(() => m.search_placeholder()) : undefined}
-        title={props.collapsed ? t(() => m.search_placeholder()) : undefined}
-        onClick={() => props.onSearch()}
-      >
-        <Search class="shrink-0" size={15} />
-        <Show when={!props.collapsed}>
-          <span class="min-w-0 flex-1 truncate">{t(() => m.search_placeholder())}</span>
-        </Show>
-      </button>
+      <Show when={props.collapsed}>
+        <button
+          class="grid size-7 place-items-center self-center rounded-md text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid={props.searchTestId}
+          type="button"
+          aria-label={t(() => m.search_placeholder())}
+          title={t(() => m.search_placeholder())}
+          onClick={() => props.onSearch()}
+        >
+          <Search size={16} />
+        </button>
+      </Show>
 
       <Show when={props.level === "scope" && props.scope}>
         {(scope) => (
@@ -416,7 +423,99 @@ function SidebarContent(props: {
         </For>
         </div>
       </ScrollArea>
+
+      <div class={cn("flex", props.collapsed ? "justify-center" : "justify-end")}>
+        <AboutButton />
+      </div>
     </>
+  );
+}
+
+function AboutButton() {
+  const [open, setOpen] = createSignal(false);
+  const status = useQuery(() => ({
+    queryKey: ["admin", "status"],
+    queryFn: adminStatus,
+    enabled: open(),
+  }));
+
+  return (
+    <>
+      <Button
+        aria-label={t(() => m.about_label())}
+        class="text-muted-foreground"
+        size="icon-sm"
+        title={t(() => m.about_label())}
+        type="button"
+        variant="ghost"
+        onClick={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <Show when={open()}>
+        <AboutDialog version={status.data?.version} onClose={() => setOpen(false)} />
+      </Show>
+    </>
+  );
+}
+
+function AboutDialog(props: { version?: string; onClose: () => void }) {
+  let dialog!: HTMLDivElement;
+  const previousFocus =
+    typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
+  onSettled(() => {
+    dialog.focus();
+    return () => previousFocus?.focus();
+  });
+
+  return (
+    <Portal>
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        role="presentation"
+        onClick={props.onClose}
+      >
+        <div
+          ref={dialog}
+          class="relative flex w-full max-w-sm flex-col items-center gap-3 rounded-lg border border-hairline bg-content-bg p-6 text-center shadow-card outline-none"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="about-dialog-title"
+          tabindex="-1"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") props.onClose();
+          }}
+        >
+          <Button
+            aria-label={t(() => m.about_close())}
+            class="absolute top-2 right-2"
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+            onClick={props.onClose}
+          >
+            <X />
+          </Button>
+          <Brain class="text-foreground" size={32} />
+          <div class="flex flex-col gap-1">
+            <h2 id="about-dialog-title" class="text-sm font-semibold">
+              {t(() => m.brand_name())}
+            </h2>
+            <p class="text-sm text-muted-foreground">{t(() => m.brand_subtitle())}</p>
+          </div>
+          <span
+            class="cursor-default rounded-full border border-hairline px-2.5 py-0.5 font-mono text-xs text-muted-foreground"
+            title={t(() => m.overview_engine_status_hint())}
+          >
+            <Show when={props.version} fallback="—">
+              {(version) => t(() => m.overview_engine_status({ version: version() }))}
+            </Show>
+          </span>
+          <p class="text-sm text-muted-foreground">{t(() => m.about_description())}</p>
+        </div>
+      </div>
+    </Portal>
   );
 }
 
@@ -497,7 +596,7 @@ export function Shell(props: ShellProps) {
       {/* Sidebar desktop: largura fixa; o botão do header alterna o rail de ícones. */}
       <nav
         class={cn(
-          "hidden min-h-0 shrink-0 flex-col gap-4 bg-sidebar-bg p-2 pr-0 lg:flex",
+          "hidden min-h-0 shrink-0 flex-col gap-4 border-r border-hairline bg-sidebar-bg p-2 lg:flex",
           collapsed() ? "w-[52px]" : "w-[220px]",
         )}
         aria-label="Primary navigation"
@@ -512,9 +611,8 @@ export function Shell(props: ShellProps) {
         />
       </nav>
 
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col p-2">
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-hairline bg-content-bg shadow-card">
-          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-content-bg">
+        <header class="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
             <div class="flex min-w-0 items-center gap-2">
               <button
                 class="-ml-1 rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
@@ -553,10 +651,9 @@ export function Shell(props: ShellProps) {
               <UserMenu />
             </div>
           </header>
-          <ScrollArea fill class="min-h-0 flex-1">
-            <div class="flex min-h-full flex-col gap-4 p-4">{props.children}</div>
-          </ScrollArea>
-        </div>
+        <ScrollArea fill class="min-h-0 flex-1">
+          <div class="flex min-h-full flex-col gap-4 p-4">{props.children}</div>
+        </ScrollArea>
       </div>
 
       {/* Overlay: último filho do artboard, fora do card — como no protótipo. */}

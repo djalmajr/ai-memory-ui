@@ -262,14 +262,14 @@ export function SearchScopeCascader(props: {
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
-          class="z-[60] mt-1 w-[28rem] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0"
+          class="z-[60] mt-1 w-[28rem] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl outline-none"
           data-testid="search-scope-cascader-content"
         >
           {/* Global row — always available on top */}
           <button
             class={cn(
               "flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
-              props.target.kind === "global" && "bg-selected text-primary",
+              props.target.kind === "global" && "bg-active-item text-foreground",
             )}
             type="button"
             onClick={() => pick({ kind: "global" })}

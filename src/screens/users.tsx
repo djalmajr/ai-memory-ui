@@ -45,11 +45,7 @@ export function UsersScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_users())}</span>}
-      description={
-        <Show when={allowed()}>
-          <span>{t(() => m.users_subtitle())}</span>
-        </Show>
-      }
+      description={<span>{t(() => m.users_subtitle())}</span>}
     >
       <Show when={allowed()} fallback={<Forbidden />}>
         <UsersBody />

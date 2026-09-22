@@ -43,6 +43,7 @@ export function ScopeWikiScreen(props: { project: string; workspace: string }) {
 
   return (
     <Shell
+      description={<span>{t(() => m.wiki_subtitle())}</span>}
       actions={
         <Show when={pages$.data}>
           {(pages) => <span>{t(() => m.count_pages({ count: pages().length }))}</span>}

@@ -69,6 +69,7 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
 
   return (
     <Shell
+      description={<span>{t(() => m.handoffs_subtitle())}</span>}
       level="scope"
       scope={scope()}
       pendingCount={pending$.data?.length}

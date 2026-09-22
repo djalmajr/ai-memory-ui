@@ -111,6 +111,7 @@ export function ScopeMessagesScreen(props: { project: string; workspace: string 
 
   return (
     <Shell
+      description={<span>{t(() => m.messages_subtitle())}</span>}
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.messages_title())} />}
       level="scope"
       pendingCount={pending$.data?.length}

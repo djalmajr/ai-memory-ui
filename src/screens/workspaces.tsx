@@ -25,7 +25,11 @@ export function WorkspacesScreen() {
   }));
 
   return (
-    <Shell heading={<span>{t(() => m.nav_workspaces())}</span>} level="server">
+    <Shell
+      description={<span>{t(() => m.workspaces_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_workspaces())}</span>}
+      level="server"
+    >
       <Show
         fallback={
           <div class="flex flex-col gap-3">

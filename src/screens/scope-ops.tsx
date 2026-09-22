@@ -87,6 +87,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
 
   return (
     <Shell
+      description={<span>{t(() => m.scope_ops_subtitle())}</span>}
       level="scope"
       scope={scope()}
       pendingCount={pending$.data?.length}

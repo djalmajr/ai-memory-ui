@@ -37,11 +37,7 @@ export function AccessScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_access())}</span>}
-      description={
-        <Show when={allowed()}>
-          <span>{t(() => m.access_subtitle())}</span>
-        </Show>
-      }
+      description={<span>{t(() => m.access_subtitle())}</span>}
     >
       <Show
         when={allowed()}

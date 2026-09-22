@@ -7,7 +7,11 @@ import * as m from "~/paraglide/messages";
 // à mão em vez de cair numa página nua.
 export function NotFoundScreen() {
   return (
-    <Shell level="server" heading={<span>{t(() => m.notfound_title())}</span>}>
+    <Shell
+      description={<span>{t(() => m.notfound_body())}</span>}
+      heading={<span>{t(() => m.notfound_title())}</span>}
+      level="server"
+    >
       <EmptyState title={t(() => m.notfound_title())} body={t(() => m.notfound_body())} />
     </Shell>
   );

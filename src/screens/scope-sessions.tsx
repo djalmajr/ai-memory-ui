@@ -66,6 +66,7 @@ export function ScopeSessionsScreen(props: { workspace: string; project: string 
 
   return (
     <Shell
+      description={<span>{t(() => m.sessions_scope_subtitle())}</span>}
       level="scope"
       scope={scope()}
       pendingCount={pending$.data?.length}

@@ -150,6 +150,7 @@ export function SessionsByAgentScreen() {
 
   return (
     <Shell
+      description={<span>{t(() => m.sessions_by_agent_subtitle())}</span>}
       level="server"
       heading={<span>{t(() => m.nav_sessions())}</span>}
     >

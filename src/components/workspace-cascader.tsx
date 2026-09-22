@@ -156,7 +156,7 @@ export function WorkspaceProjectCascader(props: {
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
-          class="z-50 mt-1 w-[28rem] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0"
+          class="z-50 mt-1 w-[28rem] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl outline-none"
           data-testid="workspace-cascader-content"
         >
           <div class="border-b p-2">

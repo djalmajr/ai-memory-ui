@@ -239,18 +239,7 @@ export function ServerOverviewScreen() {
 
   return (
     <Shell
-      actions={
-        <Show when={statusQ.data}>
-          {/* Só a versão: qualquer sufixo de status ("saudável"/"conectado")
-              seria tautológico — se o conteúdo carregou, o engine respondeu.
-              O tooltip documenta a origem do dado. */}
-          {(status) => (
-            <span class="cursor-default" title={t(() => m.overview_engine_status_hint())}>
-              {t(() => m.overview_engine_status({ version: status().version }))}
-            </span>
-          )}
-        </Show>
-      }
+      description={<span>{t(() => m.overview_subtitle())}</span>}
       heading={<span>{t(() => m.nav_overview())}</span>}
       level="server"
     >

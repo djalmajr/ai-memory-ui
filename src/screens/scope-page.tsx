@@ -46,6 +46,11 @@ export function ScopePageScreen(props: { path: string; project: string; workspac
 
   return (
     <Shell
+      description={
+        <span class="font-mono">
+          {props.path || t(() => m.page_new_subtitle())}
+        </span>
+      }
       heading={<ScopeBreadcrumb scope={scope()} screen={screenLabel()} />}
       level="scope"
       pendingCount={pending$.data?.length}

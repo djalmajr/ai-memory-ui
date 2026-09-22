@@ -16,10 +16,10 @@ export const localeNames: Record<Locale, string> = {
   "pt-BR": "Português",
 };
 
-export const localeFlags: Record<Locale, string> = {
-  "en": "🇺🇸",
-  "es": "🇪🇸",
-  "pt-BR": "🇧🇷",
+export const localeCodes: Record<Locale, string> = {
+  "en": "EN",
+  "es": "ES",
+  "pt-BR": "PT",
 };
 
 // Popover de idioma no Kobalte (mesmo padrão do cascader): conteúdo em portal
@@ -31,20 +31,20 @@ export function LanguageSwitcher() {
     <PopoverPrimitive.Root gutter={4} open={open()} placement="bottom-end" onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger
         aria-label="Idioma"
-        class="grid size-9 place-items-center rounded-md text-lg outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        class="grid size-9 place-items-center rounded-md text-xs font-semibold tracking-wide outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="language-switcher"
         type="button"
       >
-        {localeFlags[useLocale()]}
+        {localeCodes[useLocale()]}
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content class="z-50 w-40 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none">
+        <PopoverPrimitive.Content class="z-50 w-max gap-0.5 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none">
           <For each={locales}>
             {(loc) => (
               <button
                 class={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover",
-                  useLocale() === loc && "bg-selected text-primary",
+                  "flex items-center whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover",
+                  useLocale() === loc && "bg-active-item font-medium text-foreground",
                 )}
                 type="button"
                 onClick={() => {
@@ -52,8 +52,7 @@ export function LanguageSwitcher() {
                   setOpen(false);
                 }}
               >
-                <span class="text-base leading-none">{localeFlags[loc]}</span>
-                <span class="truncate">{localeNames[loc]}</span>
+                {localeNames[loc]}
               </button>
             )}
           </For>

@@ -159,6 +159,7 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
 
   return (
     <Shell
+      description={<span>{t(() => m.workspace_subtitle())}</span>}
       heading={
         <>
           <Link class="text-muted-foreground hover:text-foreground" to="/workspaces">
