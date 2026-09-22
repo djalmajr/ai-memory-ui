@@ -125,7 +125,9 @@ export function CommandPalette(props: {
               esc
             </kbd>
           </div>
-          <ScrollArea fill class="min-h-0 flex-1">
+          {/* In-flow, not `fill`. The dialog is only `max-h`, so an absolute
+              viewport collapses to 0 and the footer still counts the hits. */}
+          <ScrollArea class="max-h-[min(32rem,calc(70vh-7rem))]">
           <div class="p-2">
             <Switch>
               <Match when={props.submitted.length === 0}>
