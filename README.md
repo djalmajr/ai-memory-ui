@@ -1,11 +1,11 @@
 # ai-memory-ui
 
-Custom SolidJS frontend for [`ai-memory`](https://github.com/akitaonrails/ai-memory) —
-a read-only knowledge browser served by the server's `--web-ui-dir`, consuming
-the same-origin `/api/v1` JSON API.
+Custom SolidJS console for [`ai-memory`](https://github.com/akitaonrails/ai-memory).
+The server hosts the built SPA at `/web` (`--web-ui-dir`). The browser reads
+`/api/v1` and operates `/admin` with the human session cookie. It never reads
+SQLite or wiki files directly.
 
-> Requires an `ai-memory` server with the read-only `/api/v1` frontend API and
-> `--web-ui-dir` enabled.
+> Requires an `ai-memory` server with `/api/v1`, `/admin`, and `--web-ui-dir`.
 
 ## Screenshots
 
@@ -30,6 +30,13 @@ This app is a same-origin SPA for `ai-memory`:
 - Break-glass recovery is supported via `POST /auth/recovery` using the server's configured recovery token.
 - `/api/v1` and `/admin` JSON APIs serve the frontend with `credentials: "include"`.
 - The UI never reads SQLite or wiki files directly.
+
+Navigation has two levels:
+
+- **Server:** overview, workspaces, sessions, activity, audit, graph, access (`aim_`), users, consumers (`amk_`), operations, backups, configuration.
+- **Project:** wiki, page reader (write and delete for admins), sessions, handoffs, messages, pending writes, project operations.
+
+Consumers lists keys from the mcp-auth sidecar at `/keys`. When that route is not on the same host, the table stays empty and the screen says so — it does not invent rows.
 
 The UI supports the workspace layout where each company/client can be a
 workspace, while shared knowledge lives in separate workspaces such as
@@ -60,8 +67,8 @@ search and without copying pages between workspaces.
 
 ## Stack
 
-- SolidJS + TanStack Router (file-based) + TanStack Query
-- Tailwind CSS v4 (`@tailwindcss/vite`) + Kobalte (solid-ui components)
+- SolidJS 2 (`solid-js` + `@solidjs/web`, `@solidjs/vite-plugin`) + TanStack Router 2 (file-based) + TanStack Query 6
+- Tailwind CSS v4 (`@tailwindcss/vite`); UI primitives are native elements in `src/components/` (popover on `@floating-ui/dom`, Lucide icons vendored in `icons.tsx`)
 - i18n via inlang Paraglide JS (`en` / `pt-BR` / `es`)
 
 ## Develop

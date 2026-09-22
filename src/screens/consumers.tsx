@@ -1,16 +1,20 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
+import { Ban, CircleHelp, Plus, RefreshCw } from "~/components/icons";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Checkbox } from "~/components/checkbox";
 import { Input } from "~/components/input";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { Chip, EmptyState } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import { ApiError } from "~/lib/api";
 import { canMutate, tier } from "~/lib/auth";
-import { formatRelative, fromUnixSeconds } from "~/lib/datetime";
+import { formatDateShort, formatRelative, fromUnixSeconds } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import {
   createKey,
@@ -44,7 +48,7 @@ export function ConsumersScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_consumers())}</span>}
-      actions={<span>{t(() => m.consumers_subtitle())}</span>}
+      description={<span>{t(() => m.consumers_subtitle())}</span>}
     >
       <ConsumersBody />
     </Shell>
@@ -75,24 +79,14 @@ function ConsumersBody() {
   const unavailable = () => listQ.isError && isUnavailable(listQ.error);
   const close = () => setDialog(null);
 
+  // Revoked keys are soft-deleted in the sidecar and never authenticate again;
+  // the inventory shows only what can still be used (or rotated/revoked).
+  const rows = createMemo(() =>
+    (listQ.data ?? []).filter((row) => row.revoked_at === null || row.revoked_at === undefined),
+  );
+
   return (
     <div class="flex flex-col gap-4">
-      <Show when={unavailable()}>
-        <div
-          class="flex flex-col gap-1 rounded-lg border border-hairline bg-accent p-4 text-accent-foreground"
-          role="status"
-        >
-          <strong class="text-sm font-medium">{t(() => m.consumers_unavailable_title())}</strong>
-          <p class="text-xs">{t(() => m.consumers_unavailable_body())}</p>
-        </div>
-      </Show>
-
-      <div class="flex items-center justify-end">
-        <Button size="sm" disabled={unavailable() || !canMutate(tier())} onClick={() => setDialog({ kind: "create" })}>
-          {t(() => m.consumers_new())}
-        </Button>
-      </div>
-
       <Show when={rowError()}>
         {(message) => (
           <p class="text-xs text-destructive" role="alert">
@@ -115,94 +109,54 @@ function ConsumersBody() {
             title={t(() => m.state_error_title())}
             body={listQ.error instanceof ApiError ? listQ.error.message : t(() => m.state_error_title())}
           />
-          <Button size="sm" variant="outline" onClick={() => void listQ.refetch()}>
+          <Button variant="outline" onClick={() => void listQ.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
       </Show>
 
       <Show when={!listQ.isPending && (unavailable() || !listQ.isError)}>
-        <Show
-          when={(listQ.data ?? []).length > 0}
-          fallback={
-            <EmptyState
-              title={t(() => m.state_empty_title())}
-              body={
-                unavailable()
-                  ? t(() => m.consumers_unavailable_empty())
-                  : t(() => m.consumers_empty_body())
-              }
-            />
+        <DataGrid
+          beforeSort={
+            <Show when={unavailable()}>
+              <KeysUnavailableHelp />
+            </Show>
           }
-        >
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-xs text-muted-foreground">
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_id())}</th>
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_preview())}</th>
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_actor())}</th>
-                  <th class="w-[200px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_owner())}</th>
-                  <th class="w-[160px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_scopes())}</th>
-                  <th class="w-[100px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_state())}</th>
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.consumers_col_last_used())}</th>
-                  <th class="w-[180px] px-2 py-1.5 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                <For each={listQ.data}>
-                  {(row) => (
-                    <tr class="border-t border-hairline">
-                      <td class="px-2 py-1.5 font-mono">{row.id}</td>
-                      <td class="px-2 py-1.5 font-mono text-xs">{row.preview}</td>
-                      <td class="px-2 py-1.5 font-mono">{row.actor_user}</td>
-                      <td class="px-2 py-1.5">
-                        <OwnerCell owner={row.owner} />
-                      </td>
-                      <td class="px-2 py-1.5">
-                        <div class="flex flex-wrap gap-1">
-                          <For each={row.scopes}>{(scope) => <ScopeChip scope={scope} />}</For>
-                        </div>
-                      </td>
-                      <td class="px-2 py-1.5">
-                        <StateBadge row={row} />
-                      </td>
-                      <td class="px-2 py-1.5 text-muted-foreground">
-                        {row.last_used_at === null
-                          ? "—"
-                          : formatRelative(fromUnixSeconds(row.last_used_at))}
-                      </td>
-                      <td class="px-2 py-1.5">
-                        <div class="flex flex-wrap justify-end gap-1">
-                          <Show when={row.revoked_at === null || row.revoked_at === undefined}>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              class="h-7"
-                              disabled={busy() === row.id || !canMutate(tier())}
-                              onClick={() => setDialog({ kind: "rotate", key: row })}
-                            >
-                              {t(() => m.consumers_action_rotate())}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              class="h-7"
-                              disabled={busy() === row.id || !canMutate(tier())}
-                              onClick={() => setDialog({ kind: "revoke", key: row })}
-                            >
-                              {t(() => m.consumers_action_revoke())}
-                            </Button>
-                          </Show>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
+          action={
+            <Button disabled={unavailable() || !canMutate(tier())} onClick={() => setDialog({ kind: "create" })}>
+              <Plus /> {t(() => m.consumers_new())}
+            </Button>
+          }
+          empty={unavailable() ? t(() => m.consumers_unavailable_empty()) : t(() => m.consumers_empty_body())}
+          items={rows()}
+          searchPlaceholder={t(() => m.consumers_search_placeholder())}
+          columns={[
+            { id: "id", label: t(() => m.consumers_col_id()), class: "w-[140px] font-mono", search: (row) => `${row.id} ${row.preview} ${row.actor_user}`, sortValue: (row) => row.id, cell: (row) => row.id },
+            { id: "preview", label: t(() => m.consumers_col_preview()), class: "w-[140px] font-mono text-xs", cell: (row) => row.preview },
+            { id: "actor", label: t(() => m.consumers_col_actor()), class: "w-[140px] font-mono", sortValue: (row) => row.actor_user, cell: (row) => row.actor_user },
+            { id: "owner", label: t(() => m.consumers_col_owner()), class: "w-[200px]", cell: (row) => <OwnerCell owner={row.owner} /> },
+            { id: "scopes", label: t(() => m.consumers_col_scopes()), class: "w-[160px]", cell: (row) => <div class="flex flex-wrap gap-1"><For each={row.scopes}>{(scope) => <ScopeChip scope={scope} />}</For></div> },
+            { id: "state", label: t(() => m.consumers_col_state()), class: "w-[100px]", cell: (row) => <StateBadge row={row} /> },
+            { id: "created", label: t(() => m.consumers_col_created()), class: "w-[120px] text-muted-foreground", sortValue: (row) => row.created_at, cell: (row) => formatDateShort(fromUnixSeconds(row.created_at)?.toISOString() ?? null) },
+            { id: "used", label: t(() => m.consumers_col_last_used()), class: "w-[140px] text-muted-foreground", cell: (row) => (row.last_used_at === null ? "—" : formatRelative(fromUnixSeconds(row.last_used_at))) },
+            {
+              id: "actions",
+              label: "",
+              class: "w-[80px]",
+              hideable: false,
+              cell: (row) => (
+                <div class="flex gap-0.5">
+                  <Button aria-label={t(() => m.consumers_action_rotate())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" title={t(() => m.consumers_action_rotate())} variant="ghost" onClick={() => setDialog({ kind: "rotate", key: row })}>
+                    <RefreshCw />
+                  </Button>
+                  <Button aria-label={t(() => m.consumers_action_revoke())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" title={t(() => m.consumers_action_revoke())} variant="ghost" onClick={() => setDialog({ kind: "revoke", key: row })}>
+                    <Ban />
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+        />
       </Show>
 
       <Show when={dialog()?.kind === "create"}>
@@ -290,6 +244,40 @@ function ConsumersBody() {
   );
 }
 
+function KeysUnavailableHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "keys-unavailable-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.consumers_unavailable_title())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>
+          <span class="font-medium">{t(() => m.consumers_unavailable_title())}. </span>
+          {t(() => m.consumers_unavailable_body())}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function OwnerCell(props: { owner: KeyOwner }) {
   // `owner.label` é o rótulo humano (preferred_username). Nunca renderizar a
   // storage key `oidc:<username>` / `user:<username>` — se o sidecar vazar
@@ -369,12 +357,14 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
   let dialog!: HTMLDivElement;
   const previousFocus =
     typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
-  onMount(() => dialog.focus());
-  onCleanup(() => previousFocus?.focus());
+  onSettled(() => {
+    dialog.focus();
+    return () => previousFocus?.focus();
+  });
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar-bg/80 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={props.onClose}
     >
@@ -474,7 +464,7 @@ function CreateKeyDialog(props: {
     <Modal title={t(() => m.consumers_create_title())} onClose={props.onClose}>
       <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.consumers_field_id())}
           </span>
           <Input
@@ -500,7 +490,7 @@ function CreateKeyDialog(props: {
         </label>
 
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.consumers_field_actor())}
           </span>
           <Input
@@ -545,7 +535,7 @@ function CreateKeyDialog(props: {
         </fieldset>
 
         <div class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.consumers_owner_label())}
           </span>
           {/* Somente leitura: o sidecar recusa owner no corpo. Sem identidade
@@ -593,10 +583,10 @@ function CreateKeyDialog(props: {
         </Show>
 
         <div class="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.consumers_cancel())}
           </Button>
-          <Button type="submit" size="sm" disabled={!canSubmit()}>
+          <Button type="submit" disabled={!canSubmit()}>
             {t(() => m.consumers_create_submit())}
           </Button>
         </div>
@@ -656,7 +646,7 @@ function RotateKeyDialog(props: {
       <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
         <p class="text-xs text-muted-foreground">{t(() => m.consumers_rotate_body())}</p>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.consumers_field_id())}
           </span>
           <Input
@@ -676,10 +666,10 @@ function RotateKeyDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.consumers_cancel())}
           </Button>
-          <Button type="submit" size="sm" disabled={!valid() || pending()}>
+          <Button type="submit" disabled={!valid() || pending()}>
             {t(() => m.consumers_action_rotate())}
           </Button>
         </div>
@@ -733,12 +723,12 @@ function ConfirmNameDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.consumers_cancel())}
           </Button>
           <Button
             type="submit"
-            size="sm"
+           
             variant={props.destructive ? "destructive" : "default"}
             disabled={!matches() || props.pending}
           >
@@ -789,10 +779,10 @@ function SecretDialog(props: {
         )}
       </Show>
       <div class="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => void copy()}>
+        <Button variant="outline" onClick={() => void copy()}>
           {copied() ? t(() => m.users_secret_copied()) : t(() => m.users_secret_copy())}
         </Button>
-        <Button size="sm" onClick={props.onClose}>
+        <Button onClick={props.onClose}>
           {t(() => m.users_secret_done())}
         </Button>
       </div>

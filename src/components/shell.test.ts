@@ -67,6 +67,7 @@ describe("sidebar de escopo", () => {
       "/s/$workspace/$project",
       "/s/$workspace/$project/sessions",
       "/s/$workspace/$project/handoffs",
+      "/s/$workspace/$project/messages",
       "/s/$workspace/$project/pending",
       "/s/$workspace/$project/ops",
     ]);

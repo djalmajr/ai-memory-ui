@@ -1,12 +1,16 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show, createSignal, onSettled } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
+import { CircleHelp } from "~/components/icons";
 import { Input } from "~/components/input";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminApiCredentials,
   adminCreateApiCredential,
@@ -34,7 +38,7 @@ export function AccessScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_access())}</span>}
-      actions={
+      description={
         <Show when={allowed()}>
           <span>{t(() => m.access_subtitle())}</span>
         </Show>
@@ -55,6 +59,40 @@ export function AccessScreen() {
   );
 }
 
+function AccessHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "access-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.access_help())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>
+          <span class="font-medium">{t(() => m.access_subtitle())}. </span>
+          {t(() => m.access_note_external())}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function AccessBody() {
   const credsQ = useQuery(() => ({
     queryKey: ["admin", "api-credentials"],
@@ -70,6 +108,8 @@ export function AccessBody() {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [rowError, setRowError] = createSignal<string | null>(null);
 
+  const rows = () => credsQ.data ?? [];
+
   const close = () => setDialog(null);
 
   const userMap = () => {
@@ -83,24 +123,6 @@ export function AccessBody() {
 
   return (
     <div class="flex flex-col gap-4">
-      {/* Banner explicativo sobre credenciais nativas vs consumidores externos */}
-      <div class="flex flex-col gap-1 rounded-lg border border-hairline bg-accent/40 p-4 text-accent-foreground">
-        <strong class="text-sm font-medium">{t(() => m.access_subtitle())}</strong>
-        <p class="text-xs text-muted-foreground">{t(() => m.access_note_external())}</p>
-      </div>
-
-      <div class="flex items-center justify-end">
-        <Button
-          size="sm"
-          disabled={!canMutate(tier())}
-          onClick={() => {
-            setRowError(null);
-            setDialog({ kind: "create" });
-          }}
-        >
-          {t(() => m.access_new())}
-        </Button>
-      </div>
 
       <Show when={rowError()}>
         {(message) => (
@@ -124,95 +146,73 @@ export function AccessBody() {
             title={t(() => m.state_error_title())}
             body={credsQ.error instanceof ApiError ? credsQ.error.message : t(() => m.state_error_title())}
           />
-          <Button size="sm" variant="outline" onClick={() => void credsQ.refetch()}>
+          <Button variant="outline" onClick={() => void credsQ.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
       </Show>
 
       <Show when={!credsQ.isPending && !credsQ.isError}>
-        <Show
-          when={(credsQ.data ?? []).length > 0}
-          fallback={
-            <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.access_empty())} />
+        <DataGrid
+          action={
+            <Button
+              disabled={!canMutate(tier())}
+              onClick={() => {
+                setRowError(null);
+                setDialog({ kind: "create" });
+              }}
+            >
+              {t(() => m.access_new())}
+            </Button>
           }
-        >
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-xs text-muted-foreground">
-                  <th class="w-[180px] px-2 py-1.5 font-medium">{t(() => m.access_col_label())}</th>
-                  <th class="w-[150px] px-2 py-1.5 font-medium">{t(() => m.access_col_user())}</th>
-                  <th class="w-[150px] px-2 py-1.5 font-medium">{t(() => m.access_col_preview())}</th>
-                  <th class="w-[130px] px-2 py-1.5 font-medium">{t(() => m.access_col_created())}</th>
-                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.access_col_last_used())}</th>
-                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.access_col_expires())}</th>
-                  <th class="w-[100px] px-2 py-1.5 font-medium">{t(() => m.access_col_status())}</th>
-                  <th class="w-[150px] px-2 py-1.5 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                <For each={credsQ.data}>
-                  {(cred) => {
-                    const isRevoked = () => cred.revoked_at !== null && cred.revoked_at !== undefined;
-                    const userName = () => userMap().get(cred.user_id) || cred.user_id;
-                    return (
-                      <tr class="border-t border-hairline">
-                        <td class="px-2 py-1.5 font-medium">{cred.label}</td>
-                        <td class="px-2 py-1.5 font-mono text-xs text-muted-foreground">{userName()}</td>
-                        <td class="px-2 py-1.5 font-mono text-xs">
-                          {cred.preview ? cred.preview : "aim_…••••"}
-                        </td>
-                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
-                          {formatDateTime(fromMicros(cred.created_at))}
-                        </td>
-                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
-                          {cred.last_used_at !== null && cred.last_used_at !== undefined
-                            ? formatRelative(fromMicros(cred.last_used_at))
-                            : "—"}
-                        </td>
-                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
-                          {cred.expires_at !== null && cred.expires_at !== undefined
-                            ? formatDateTime(fromMicros(cred.expires_at))
-                            : "—"}
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <Badge variant={isRevoked() ? "error" : "success"}>
-                            {isRevoked() ? t(() => m.access_status_revoked()) : t(() => m.access_status_active())}
-                          </Badge>
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <div class="flex flex-wrap justify-end gap-1">
-                            <Show when={!isRevoked()}>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 text-xs"
-                                disabled={busy() === cred.id || !canMutate(tier())}
-                                onClick={() => setDialog({ kind: "rotate", credential: cred })}
-                              >
-                                {t(() => m.access_action_rotate())}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 text-xs"
-                                disabled={busy() === cred.id || !canMutate(tier())}
-                                onClick={() => setDialog({ kind: "revoke", credential: cred })}
-                              >
-                                {t(() => m.access_action_revoke())}
-                              </Button>
-                            </Show>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
+          beforeSort={<AccessHelp />}
+          empty={t(() => m.access_empty())}
+          items={rows()}
+          columns={[
+            { id: "label", label: t(() => m.access_col_label()), class: "w-[180px] font-medium", search: (cred) => cred.label, sortValue: (cred) => cred.label, cell: (cred) => cred.label },
+            { id: "user", label: t(() => m.access_col_user()), class: "w-[150px] font-mono text-xs text-muted-foreground", sortValue: (cred) => userMap().get(cred.user_id) || cred.user_id, cell: (cred) => userMap().get(cred.user_id) || cred.user_id },
+            { id: "preview", label: t(() => m.access_col_preview()), class: "w-[150px] font-mono text-xs", cell: (cred) => cred.preview || "aim_…••••" },
+            { id: "created", label: t(() => m.access_col_created()), class: "w-[130px] text-xs text-muted-foreground", sortValue: (cred) => cred.created_at, cell: (cred) => formatDateTime(fromMicros(cred.created_at)) },
+            { id: "used", label: t(() => m.access_col_last_used()), class: "w-[120px] text-xs text-muted-foreground", cell: (cred) => (cred.last_used_at != null ? formatRelative(fromMicros(cred.last_used_at)) : "—") },
+            { id: "expires", label: t(() => m.access_col_expires()), class: "w-[120px] text-xs text-muted-foreground", cell: (cred) => (cred.expires_at != null ? formatDateTime(fromMicros(cred.expires_at)) : "—") },
+            {
+              id: "status",
+              label: t(() => m.access_col_status()),
+              class: "w-[100px]",
+              filter: {
+                label: t(() => m.access_col_status()),
+                value: (cred) => (cred.revoked_at != null ? "revoked" : "active"),
+                options: [
+                  { label: t(() => m.access_status_active()), value: "active" },
+                  { label: t(() => m.access_status_revoked()), value: "revoked" },
+                ],
+              },
+              cell: (cred) => (
+                <Badge variant={cred.revoked_at != null ? "error" : "success"}>
+                  {cred.revoked_at != null ? t(() => m.access_status_revoked()) : t(() => m.access_status_active())}
+                </Badge>
+              ),
+            },
+            {
+              id: "actions",
+              label: "",
+              class: "w-[150px]",
+              hideable: false,
+              cell: (cred) => (
+                <Show when={cred.revoked_at == null}>
+                  <div class="flex gap-1">
+                    <Button variant="ghost" disabled={busy() === cred.id || !canMutate(tier())} onClick={() => setDialog({ kind: "rotate", credential: cred })}>
+                      {t(() => m.access_action_rotate())}
+                    </Button>
+                    <Button variant="ghost" disabled={busy() === cred.id || !canMutate(tier())} onClick={() => setDialog({ kind: "revoke", credential: cred })}>
+                      {t(() => m.access_action_revoke())}
+                    </Button>
+                  </div>
+                </Show>
+              ),
+            },
+          ]}
+        />
       </Show>
 
       <Show when={dialog()?.kind === "create"}>
@@ -310,12 +310,14 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
   let dialog!: HTMLDivElement;
   const previousFocus =
     typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
-  onMount(() => dialog.focus());
-  onCleanup(() => previousFocus?.focus());
+  onSettled(() => {
+    dialog.focus();
+    return () => previousFocus?.focus();
+  });
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar-bg/80 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={props.onClose}
     >
@@ -400,7 +402,7 @@ function CreateApiCredentialDialog(props: {
     <Modal title={t(() => m.access_create_title())} onClose={props.onClose}>
       <form class="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)}>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.access_field_label())}
           </span>
           <Input
@@ -413,11 +415,10 @@ function CreateApiCredentialDialog(props: {
         </label>
 
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.access_field_user())}
           </span>
-          <select
-            class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 text-sm outline-none transition focus-visible:border-primary"
+          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
             value={username() || defaultUser()}
             onChange={(e) => setUsername(e.currentTarget.value)}
           >
@@ -441,10 +442,10 @@ function CreateApiCredentialDialog(props: {
         </Show>
 
         <div class="flex justify-end gap-2 pt-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
-          <Button type="submit" size="sm" disabled={pending() || label().trim().length === 0}>
+          <Button type="submit" disabled={pending() || label().trim().length === 0}>
             {t(() => m.access_create_submit())}
           </Button>
         </div>
@@ -497,12 +498,12 @@ function ConfirmNameDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
           <Button
             type="submit"
-            size="sm"
+           
             variant={props.destructive ? "destructive" : "default"}
             disabled={!matches() || props.pending}
           >
@@ -545,10 +546,10 @@ function SecretDialog(props: {
         {props.token}
       </code>
       <div class="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => void copy()}>
+        <Button variant="outline" onClick={() => void copy()}>
           {copied() ? t(() => m.users_secret_copied()) : t(() => m.users_secret_copy())}
         </Button>
-        <Button size="sm" onClick={props.onClose}>
+        <Button onClick={props.onClose}>
           {t(() => m.users_secret_done())}
         </Button>
       </div>

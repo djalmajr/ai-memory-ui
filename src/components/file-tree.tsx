@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/solid-router";
-import { Box, ChevronRight, FileText, Folder, FolderOpen } from "lucide-solid";
+import { Box, ChevronRight, FileText, Folder, FolderOpen } from "~/components/icons";
 import { For, Match, Show, Switch, createSignal } from "solid-js";
 
 import { cn } from "~/lib/utils";

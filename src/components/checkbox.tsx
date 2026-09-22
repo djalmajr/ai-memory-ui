@@ -1,60 +1,41 @@
-import type { ValidComponent } from "solid-js"
-import { Match, splitProps, Switch } from "solid-js"
+import { cn } from "~/lib/utils";
 
-import * as CheckboxPrimitive from "@kobalte/core/checkbox"
-import type { PolymorphicProps } from "@kobalte/core/polymorphic"
-
-import { cn } from "~/lib/utils"
-
-type CheckboxRootProps<T extends ValidComponent = "div"> =
-  CheckboxPrimitive.CheckboxRootProps<T> & { class?: string | undefined }
-
-const Checkbox = <T extends ValidComponent = "div">(
-  props: PolymorphicProps<T, CheckboxRootProps<T>>
-) => {
-  const [local, others] = splitProps(props as CheckboxRootProps, ["class"])
+// shadcn base-nova checkbox look on a native `<input type="checkbox">`: the
+// input stays in the tree (transparent, on top) so keyboard, forms and
+// assistive tech keep working; the control next to it is visual only and
+// follows the input's state via `peer-*`.
+export function Checkbox(props: {
+  checked?: boolean;
+  class?: string;
+  disabled?: boolean;
+  onChange?: (checked: boolean) => void;
+}) {
   return (
-    <CheckboxPrimitive.Root
-      class={cn("items-top group relative flex space-x-2", local.class)}
-      {...others}
-    >
-      <CheckboxPrimitive.Input class="peer" />
-      <CheckboxPrimitive.Control class="size-4 shrink-0 rounded-sm border border-primary ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 data-[checked]:border-none data-[indeterminate]:border-none data-[checked]:bg-primary data-[indeterminate]:bg-primary data-[checked]:text-primary-foreground data-[indeterminate]:text-primary-foreground">
-        <CheckboxPrimitive.Indicator>
-          <Switch>
-            <Match when={!others.indeterminate}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="size-4"
-              >
-                <path d="M5 12l5 5l10 -10" />
-              </svg>
-            </Match>
-            <Match when={others.indeterminate}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="size-4"
-              >
-                <path d="M5 12l14 0" />
-              </svg>
-            </Match>
-          </Switch>
-        </CheckboxPrimitive.Indicator>
-      </CheckboxPrimitive.Control>
-    </CheckboxPrimitive.Root>
-  )
+    <span class={cn("group relative inline-flex", props.class)}>
+      <input
+        checked={props.checked ?? false}
+        class="peer absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        disabled={props.disabled}
+        type="checkbox"
+        onChange={(event) => props.onChange?.(event.currentTarget.checked)}
+      />
+      <span
+        aria-hidden="true"
+        class="pointer-events-none flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input bg-background text-primary-foreground transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:border-ring peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50 peer-disabled:opacity-50 dark:bg-input/30 [&>svg]:hidden peer-checked:[&>svg]:block"
+      >
+        <svg
+          class="size-3.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2.5"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M5 12l5 5l10 -10" />
+        </svg>
+      </span>
+    </span>
+  );
 }
-
-export { Checkbox }

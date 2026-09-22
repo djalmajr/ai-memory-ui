@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Estado de módulo (signal + efeito no <html>): cópia fresca por teste.
+// Estado de módulo (signal + efeito no <html>): cópia fresca por teste. O
+// `flush` vem do mesmo registro de módulos: Solid 2 enfileira escritas de
+// signal e só as expõe ao leitor depois de drenar a fila.
 async function freshTheme() {
   vi.resetModules();
-  return import("~/lib/theme");
+  const [mod, { flush }] = await Promise.all([import("~/lib/theme"), import("solid-js")]);
+  return { ...mod, flush };
 }
 
 function stubMatchMedia(matches: boolean) {
@@ -51,8 +54,9 @@ describe("tema inicial", () => {
 
 describe("setTheme / toggleTheme", () => {
   it("setTheme atualiza o signal, persiste e aplica a classe no <html>", async () => {
-    const { theme, setTheme } = await freshTheme();
+    const { flush, theme, setTheme } = await freshTheme();
     setTheme("dark");
+    flush();
     expect(theme()).toBe("dark");
     expect(localStorage.getItem("ai-memory-ui-theme")).toBe("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -64,11 +68,13 @@ describe("setTheme / toggleTheme", () => {
   });
 
   it("toggleTheme alterna entre dark e light", async () => {
-    const { theme, toggleTheme } = await freshTheme();
+    const { flush, theme, toggleTheme } = await freshTheme();
     const start = theme();
     toggleTheme();
+    flush();
     expect(theme()).not.toBe(start);
     toggleTheme();
+    flush();
     expect(theme()).toBe(start);
   });
 });

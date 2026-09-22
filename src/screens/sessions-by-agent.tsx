@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { CircleHelp } from "~/components/icons";
+import { DataGrid } from "~/components/data-grid";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState } from "~/components/ui-bits";
 import {
   adminProjects,
   adminSessionsByAgent,
@@ -12,7 +13,6 @@ import {
 import type { AdminProjectSummary, AgentSessionCount } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
 import { t } from "~/lib/i18n";
-import { cn } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 
 // Sessões por agente (nível servidor).
@@ -33,6 +33,37 @@ function failMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function SessionsHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "sessions-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.sessions_help())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full right-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>{t(() => m.sessions_note())}</p>
+      </div>
+    </div>
+  );
 }
 
 interface AgentAggregate {
@@ -108,12 +139,6 @@ async function loadProjectAgents(
   }
 }
 
-function periodLabel(days: SinceDays): string {
-  if (days === 7) return t(() => m.sessions_period_7());
-  if (days === 30) return t(() => m.sessions_period_30());
-  return t(() => m.sessions_period_all());
-}
-
 export function SessionsByAgentScreen() {
   const [sinceDays, setSinceDays] = createSignal<SinceDays>(7);
   const q = useQuery(() => ({
@@ -127,12 +152,7 @@ export function SessionsByAgentScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_sessions())}</span>}
-      actions={<span>{periodLabel(sinceDays())}</span>}
     >
-      <p class="text-sm text-muted-foreground">{t(() => m.sessions_note())}</p>
-
-      <PeriodToggle value={sinceDays()} onChange={setSinceDays} />
-
       <Show when={!q.isPending} fallback={<LoadingBlock />}>
         <Show
           when={!(q.isError && q.data === undefined)}
@@ -143,77 +163,50 @@ export function SessionsByAgentScreen() {
             />
           }
         >
-          <Show
-            when={rows().length > 0}
-            fallback={
-              <EmptyState
-                title={t(() => m.state_empty_title())}
-                body={t(() => m.sessions_empty_body())}
-              />
-            }
-          >
-            <div class="overflow-x-auto rounded-lg border border-hairline">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="border-b border-hairline text-xs text-muted-foreground">
-                    <th class="w-[220px] px-4 py-2 text-left font-medium">
-                      {t(() => m.sessions_col_agent())}
-                    </th>
-                    <th class="w-[120px] px-4 py-2 text-right font-medium">
-                      {t(() => m.sessions_col_sessions())}
-                    </th>
-                    <th class="w-[120px] px-4 py-2 text-right font-medium">
-                      {t(() => m.sessions_col_projects())}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={rows()}>
-                    {(row) => (
-                      <tr class="border-b border-hairline last:border-0">
-                        <td class="px-4 py-2 font-mono">{row.agent}</td>
-                        <td class="px-4 py-2 text-right tabular-nums">{row.sessions}</td>
-                        <td class="px-4 py-2 text-right tabular-nums">{row.projects}</td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
-          </Show>
+          <DataGrid
+            beforeSort={<SessionsHelp />}
+            empty={t(() => m.sessions_empty_body())}
+            filters={[
+              {
+                label: t(() => m.sessions_period_label()),
+                value: String(sinceDays()),
+                options: [
+                  { label: t(() => m.sessions_period_7()), value: "7" },
+                  { label: t(() => m.sessions_period_30()), value: "30" },
+                  { label: t(() => m.sessions_period_all()), value: "0" },
+                ],
+                onChange: (value) => setSinceDays(Number(value) as SinceDays),
+              },
+            ]}
+            items={rows()}
+            columns={[
+              {
+                id: "agent",
+                label: t(() => m.sessions_col_agent()),
+                class: "w-[220px] font-mono",
+                search: (row) => row.agent,
+                sortValue: (row) => row.agent,
+                cell: (row) => row.agent,
+              },
+              {
+                id: "sessions",
+                label: t(() => m.sessions_col_sessions()),
+                class: "w-[120px] tabular-nums",
+                sortValue: (row) => row.sessions,
+                cell: (row) => row.sessions,
+              },
+              {
+                id: "projects",
+                label: t(() => m.sessions_col_projects()),
+                class: "w-[120px] tabular-nums",
+                sortValue: (row) => row.projects,
+                cell: (row) => row.projects,
+              },
+            ]}
+          />
         </Show>
       </Show>
     </Shell>
-  );
-}
-
-function PeriodToggle(props: { value: SinceDays; onChange: (value: SinceDays) => void }) {
-  const options: { days: SinceDays; label: () => string }[] = [
-    { days: 7, label: () => m.sessions_period_7() },
-    { days: 30, label: () => m.sessions_period_30() },
-    { days: 0, label: () => m.sessions_period_all() },
-  ];
-  return (
-    <div class="flex flex-wrap gap-2" role="group" aria-label={t(() => m.sessions_period_label())}>
-      <For each={options}>
-        {(option) => (
-          <button
-            type="button"
-            aria-pressed={props.value === option.days}
-            class={cn(
-              "h-9 rounded-md border border-hairline px-3 text-sm outline-none transition",
-              "focus-visible:ring-2 focus-visible:ring-ring",
-              props.value === option.days
-                ? "bg-active-item font-medium text-foreground"
-                : "bg-content-bg text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => props.onChange(option.days)}
-          >
-            {t(option.label)}
-          </button>
-        )}
-      </For>
-    </div>
   );
 }
 
@@ -235,7 +228,7 @@ function ErrorBlock(props: { message: string; onRetry: () => void }) {
     >
       <strong class="text-sm">{t(() => m.state_error_title())}</strong>
       <span class="max-w-md text-sm text-muted-foreground">{props.message}</span>
-      <Button size="sm" type="button" onClick={props.onRetry}>
+      <Button type="button" onClick={props.onRetry}>
         {t(() => m.state_retry())}
       </Button>
     </div>

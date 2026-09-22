@@ -1,7 +1,8 @@
-import { AlertTriangle, ChevronRight } from "lucide-solid";
-import type { JSX } from "solid-js";
+import { AlertTriangle, ChevronRight } from "~/components/icons";
+import type { JSX } from "@solidjs/web";
 import { Match, Show, Switch, createSignal } from "solid-js";
 
+import { Badge } from "~/components/badge";
 import { Skeleton } from "~/components/skeleton";
 import { cn } from "~/lib/utils";
 
@@ -79,41 +80,41 @@ export function EmptyState(props: { body: string; title: string }) {
   );
 }
 
-// Chip discreto e uniforme — base compartilhada por kind/tier/pinned.
+// Chip discreto e uniforme — base compartilhada por kind/tier/pinned: o
+// `Badge` do design system em caixa baixa.
 export function Chip(props: { children: JSX.Element; class?: string }) {
   return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[0.625rem] font-medium lowercase leading-4 tracking-wide",
-        props.class,
-      )}
-    >
+    <Badge class={cn("lowercase", props.class)} variant="secondary">
       {props.children}
-    </span>
+    </Badge>
   );
 }
 
-// Badge discreto — bg colorido suave por kind, sem cor de borda.
+// Badge por kind — tons de status do appliance (fundo a 10% + texto forte).
 export function KindBadge(props: { kind: string }) {
-  const tone = () => {
+  const variant = () => {
     switch (props.kind.toLowerCase()) {
       case "rule":
-        return "bg-success text-success-foreground";
+        return "success" as const;
       case "decision":
-        return "bg-warning text-warning-foreground";
+        return "warning" as const;
       case "gotcha":
-        return "bg-error text-error-foreground";
+        return "error" as const;
       default:
-        return "bg-muted text-muted-foreground";
+        return "secondary" as const;
     }
   };
-  return <Chip class={tone()}>{props.kind}</Chip>;
+  return (
+    <Badge class="lowercase" variant={variant()}>
+      {props.kind}
+    </Badge>
+  );
 }
 
-export function Metric(props: { inverted?: boolean; label: string; value: number }) {
+export function Metric(props: { inverted?: boolean; label: string; value: number | string }) {
   return (
     <div class="min-w-0">
-      <strong class="block text-xl leading-none">{props.value}</strong>
+      <strong class="block font-heading text-xl leading-none">{props.value}</strong>
       <small class={props.inverted ? "text-xs text-sidebar-foreground/60" : "text-xs text-muted-foreground"}>
         {props.label}
       </small>

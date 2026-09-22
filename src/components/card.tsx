@@ -1,43 +1,82 @@
-import type { Component, ComponentProps } from "solid-js"
-import { splitProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { omit } from "solid-js"
 
 import { cn } from "~/lib/utils"
 
-const Card: Component<ComponentProps<"div">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
+// shadcn base-nova `card` (appliance): `rounded-xl`, hairline ring instead of a
+// border, spacing driven by `--card-spacing` (`size="sm"` tightens it).
+type DivProps = JSX.HTMLAttributes<HTMLDivElement>
+
+function Card(props: DivProps & { size?: "default" | "sm" }) {
+  const others = omit(props, "class", "size")
   return (
     <div
-      class={cn("rounded-lg border bg-card text-card-foreground shadow-sm", local.class)}
+      class={cn(
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0",
+        props.class,
+      )}
+      data-size={props.size ?? "default"}
+      data-slot="card"
       {...others}
     />
   )
 }
 
-const CardHeader: Component<ComponentProps<"div">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
-  return <div class={cn("flex flex-col space-y-1.5 p-6", local.class)} {...others} />
-}
-
-const CardTitle: Component<ComponentProps<"h3">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
+function CardHeader(props: DivProps) {
+  const others = omit(props, "class")
   return (
-    <h3 class={cn("text-lg font-semibold leading-none tracking-tight", local.class)} {...others} />
+    <div
+      class={cn(
+        "group/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
+        props.class,
+      )}
+      data-slot="card-header"
+      {...others}
+    />
   )
 }
 
-const CardDescription: Component<ComponentProps<"p">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
-  return <p class={cn("text-sm text-muted-foreground", local.class)} {...others} />
+function CardTitle(props: DivProps) {
+  const others = omit(props, "class")
+  return (
+    <div
+      class={cn("font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm", props.class)}
+      data-slot="card-title"
+      {...others}
+    />
+  )
 }
 
-const CardContent: Component<ComponentProps<"div">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
-  return <div class={cn("p-6 pt-0", local.class)} {...others} />
+function CardDescription(props: DivProps) {
+  const others = omit(props, "class")
+  return <div class={cn("text-sm text-muted-foreground", props.class)} data-slot="card-description" {...others} />
 }
 
-const CardFooter: Component<ComponentProps<"div">> = (props) => {
-  const [local, others] = splitProps(props, ["class"])
-  return <div class={cn("flex items-center p-6 pt-0", local.class)} {...others} />
+function CardAction(props: DivProps) {
+  const others = omit(props, "class")
+  return (
+    <div
+      class={cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", props.class)}
+      data-slot="card-action"
+      {...others}
+    />
+  )
 }
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+function CardContent(props: DivProps) {
+  const others = omit(props, "class")
+  return <div class={cn("px-(--card-spacing)", props.class)} data-slot="card-content" {...others} />
+}
+
+function CardFooter(props: DivProps) {
+  const others = omit(props, "class")
+  return (
+    <div
+      class={cn("flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing)", props.class)}
+      data-slot="card-footer"
+      {...others}
+    />
+  )
+}
+
+export { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }

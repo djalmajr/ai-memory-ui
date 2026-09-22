@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState, Metric } from "~/components/ui-bits";
+import { Metric } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminStatus } from "~/lib/admin-api";
 import type {
   DerivedIndexStatus,
@@ -15,10 +17,13 @@ import type {
 } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
 import { t } from "~/lib/i18n";
+import { formatBytes } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 
-// Configuração (B10). Só o observável de GET /admin/status. Não existe
-// endpoint de config efetiva — linhas de compose/env/decay ficam de fora.
+// Configuração (B10). Só o observável de GET /admin/status: identidade,
+// contagens, índices, providers e storage (disco, tamanho, reclaim, fila
+// de escrita, formato OKF). Não existe endpoint de config efetiva — linhas
+// de compose/env/decay ficam de fora.
 
 function failMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -77,15 +82,10 @@ function ProviderCard(props: { role: ProviderRoleHealthSnapshot; title: string }
     <div class="flex min-w-0 flex-1 flex-col gap-2 rounded-lg border border-hairline p-4">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-sm font-medium">{props.title}</h3>
-        <Badge variant="outline">{props.role.status}</Badge>
+        <Show when={props.role.provider}>
+          {(provider) => <Badge variant="outline">{provider()}</Badge>}
+        </Show>
       </div>
-      <Show when={props.role.provider}>
-        {(provider) => (
-          <p class="font-mono text-sm">
-            {t(() => m.config_col_provider())}: {provider()}
-          </p>
-        )}
-      </Show>
       <Show when={props.role.model}>
         {(model) => (
           <p class="font-mono text-sm">
@@ -127,6 +127,45 @@ function ConfigBody(props: { status: StatusReport }) {
         </div>
       </section>
 
+      <Show when={props.status.storage}>
+        {(storage) => (
+          <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+            <h2 class="text-sm font-medium">{t(() => m.config_storage())}</h2>
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Metric label={t(() => m.config_disk_free())} value={formatBytes(storage().data_dir_free_bytes)} />
+              <Metric label={t(() => m.config_database_bytes())} value={formatBytes(storage().database_bytes)} />
+              <Metric label={t(() => m.config_reclaimable_bytes())} value={formatBytes(storage().reclaimable_bytes)} />
+              <Show when={props.status.write_queue}>
+                {(queue) => (
+                  <Metric
+                    label={t(() => m.config_write_queue())}
+                    value={`${queue()[0]} / ${queue()[1]}`}
+                  />
+                )}
+              </Show>
+            </div>
+            <Show when={storage().data_dir_free_bytes === null}>
+              <p class="text-xs text-muted-foreground">{t(() => m.overview_disk_unknown())}</p>
+            </Show>
+            <Show when={props.status.wiki_format}>
+              {(format) => (
+                <div class="flex flex-col gap-2">
+                  <IdentityRow
+                    label={t(() => m.config_okf())}
+                    value={format().okf_migrated ? t(() => m.config_okf_yes()) : t(() => m.config_okf_no())}
+                  />
+                  <Show when={format().backup_archive}>
+                    {(archive) => (
+                      <IdentityRow label={t(() => m.config_backup_archive())} value={archive()} />
+                    )}
+                  </Show>
+                </div>
+              )}
+            </Show>
+          </section>
+        )}
+      </Show>
+
       <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
         <h2 class="text-sm font-medium">{t(() => m.config_derived())}</h2>
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -136,45 +175,54 @@ function ConfigBody(props: { status: StatusReport }) {
           <Metric label={t(() => m.config_derived_embeddings())} value={derived().embeddings} />
         </div>
         <h3 class="text-xs font-medium text-muted-foreground">{t(() => m.config_triples())}</h3>
-        <Show
-          when={derived().triples.length > 0}
-          fallback={
-            <EmptyState body={t(() => m.config_empty_triples())} title={t(() => m.state_empty_title())} />
-          }
-        >
-          <div class="overflow-x-auto rounded-md border border-hairline">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-hairline text-left text-xs text-muted-foreground">
-                  <th class="px-3 py-2 font-medium">{t(() => m.config_col_provider())}</th>
-                  <th class="px-3 py-2 font-medium">{t(() => m.config_col_model())}</th>
-                  <th class="w-20 px-3 py-2 font-medium">{t(() => m.config_col_dim())}</th>
-                  <th class="w-24 px-3 py-2 font-medium">{t(() => m.config_col_count())}</th>
-                  <th class="w-28 px-3 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                <For each={derived().triples}>
-                  {(triple) => (
-                    <tr class="border-b border-hairline last:border-0">
-                      <td class="px-3 py-2 font-mono text-xs">{triple.provider}</td>
-                      <td class="px-3 py-2 font-mono text-xs">{triple.model}</td>
-                      <td class="px-3 py-2 font-mono text-xs">{triple.dim}</td>
-                      <td class="px-3 py-2 tabular-nums">{triple.count}</td>
-                      <td class="px-3 py-2">
-                        <Show when={tripleIsStale(triple, embedding())}>
-                          <Badge title={t(() => m.config_stale_hint())} variant="warning">
-                            {t(() => m.config_stale_triple())}
-                          </Badge>
-                        </Show>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
+        <DataGrid
+          empty={t(() => m.config_empty_triples())}
+          items={derived().triples}
+          columns={[
+            {
+              id: "provider",
+              label: t(() => m.config_col_provider()),
+              class: "font-mono text-xs",
+              search: (triple) => `${triple.provider} ${triple.model}`,
+              sortValue: (triple) => triple.provider,
+              cell: (triple) => triple.provider,
+            },
+            {
+              id: "model",
+              label: t(() => m.config_col_model()),
+              class: "font-mono text-xs",
+              sortValue: (triple) => triple.model,
+              cell: (triple) => triple.model,
+            },
+            {
+              id: "dim",
+              label: t(() => m.config_col_dim()),
+              class: "w-20 font-mono text-xs",
+              sortValue: (triple) => triple.dim,
+              cell: (triple) => triple.dim,
+            },
+            {
+              id: "count",
+              label: t(() => m.config_col_count()),
+              class: "w-24 tabular-nums",
+              sortValue: (triple) => triple.count,
+              cell: (triple) => triple.count,
+            },
+            {
+              id: "stale",
+              label: t(() => m.config_stale_triple()),
+              class: "w-28",
+              hideable: false,
+              cell: (triple) => (
+                <Show when={tripleIsStale(triple, embedding())}>
+                  <Badge title={t(() => m.config_stale_hint())} variant="warning">
+                    {t(() => m.config_stale_triple())}
+                  </Badge>
+                </Show>
+              ),
+            },
+          ]}
+        />
       </section>
 
       <section class="flex flex-col gap-4">
@@ -200,7 +248,7 @@ export function ConfigScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_config())}</span>}
-      actions={<span>{t(() => m.config_subtitle())}</span>}
+      description={<span>{t(() => m.config_subtitle())}</span>}
     >
       <Show when={q.isPending && q.data === undefined}>
         <div class="flex flex-col gap-3">
@@ -213,7 +261,7 @@ export function ConfigScreen() {
         <div class="flex flex-col items-start gap-2" role="alert">
           <p class="text-sm font-medium">{t(() => m.state_error_title())}</p>
           <p class="text-sm text-destructive">{failMessage(q.error)}</p>
-          <Button size="sm" type="button" variant="outline" onClick={() => void q.refetch()}>
+          <Button type="button" variant="outline" onClick={() => void q.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>

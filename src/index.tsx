@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/solid-query'
 import { RouterProvider, createRouter } from '@tanstack/solid-router'
 import './index.css'
 import { clearLegacyCredential } from './lib/auth'
-import { Suspense } from 'solid-js'
-import { render } from 'solid-js/web'
+import { Errored, Loading } from 'solid-js'
+import { render } from '@solidjs/web'
 import { routeTree } from './routeTree.gen'
 
 clearLegacyCredential()
@@ -59,9 +59,17 @@ if (!root) {
 render(
   () => (
     <QueryClientProvider client={queryClient}>
-      <Suspense fallback={<div class="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading memory UI</div>}>
-        <RouterProvider router={router} />
-      </Suspense>
+      <Errored
+        fallback={(error) => (
+          <div class="grid min-h-screen place-items-center text-sm text-destructive" role="alert">
+            {String(error())}
+          </div>
+        )}
+      >
+        <Loading fallback={<div class="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading memory UI</div>}>
+          <RouterProvider router={router} />
+        </Loading>
+      </Errored>
     </QueryClientProvider>
   ),
   root,

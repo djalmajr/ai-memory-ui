@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { For, Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
@@ -109,7 +109,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
         <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="text-sm font-medium">{t(() => m.ops_lint())}</h2>
-            <Button type="button" size="sm" disabled={lint.busy() || !canMutate(tier())} onClick={() => void runLint()}>
+            <Button type="button" disabled={lint.busy() || !canMutate(tier())} onClick={() => void runLint()}>
               {t(() => m.ops_run())}
             </Button>
           </div>
@@ -144,7 +144,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
         <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="text-sm font-medium">{t(() => m.ops_embed())}</h2>
-            <Button type="button" size="sm" disabled={embed.busy() || !canMutate(tier())} onClick={() => void runEmbed()}>
+            <Button type="button" disabled={embed.busy() || !canMutate(tier())} onClick={() => void runEmbed()}>
               {t(() => m.ops_run())}
             </Button>
           </div>
@@ -176,7 +176,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
         <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="text-sm font-medium">{t(() => m.ops_sweep())}</h2>
-            <Button type="button" size="sm" disabled={sweep.busy() || !canMutate(tier())} onClick={() => void runSweep()}>
+            <Button type="button" disabled={sweep.busy() || !canMutate(tier())} onClick={() => void runSweep()}>
               {t(() => m.ops_run())}
             </Button>
           </div>
@@ -202,7 +202,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
             <h2 class="text-sm font-medium">{t(() => m.ops_improve())}</h2>
             <Button
               type="button"
-              size="sm"
+             
               disabled={improve.busy() || !sessionId() || !canMutate(tier())}
               title={!sessionId() ? t(() => m.ops_session_hint()) : undefined}
               onClick={() => void runImprove()}
@@ -210,14 +210,13 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
               {t(() => m.ops_run())}
             </Button>
           </div>
-          <label class="flex max-w-md flex-col gap-1 text-xs text-muted-foreground">
+          <label class="flex max-w-md flex-col gap-1.5 text-sm font-medium">
             {t(() => m.ops_session())}
             <Show when={sessions$.isPending}>
               <Skeleton class="h-8 w-full rounded-md" />
             </Show>
             <Show when={!sessions$.isPending}>
-              <select
-                class="h-8 rounded-md border border-hairline bg-content-bg px-2 text-sm text-foreground"
+              <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
                 value={sessionId()}
                 onChange={(event) => setSessionId(event.currentTarget.value)}
               >

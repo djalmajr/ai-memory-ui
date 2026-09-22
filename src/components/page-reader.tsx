@@ -9,7 +9,7 @@ import {
   Tag,
   Type,
   Users,
-} from "lucide-solid";
+} from "~/components/icons";
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import { Markdown, stripFrontmatter } from "~/components/markdown";
@@ -18,6 +18,7 @@ import { formatDateShort } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import type { ApiPage, RelatedPage } from "~/lib/types";
 import * as m from "~/paraglide/messages";
+import { cn } from "~/lib/utils";
 
 export function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }) {
   // Soft-nav for same-project wikilinks; cross-project links fall through to
@@ -51,10 +52,10 @@ export function PageReader(props: { page: ApiPage; onNavigate: (path: string) =>
               <>
                 <span class="opacity-40">/</span>
                 <span
-                  class="truncate"
-                  classList={{
-                    "font-medium text-foreground": index() === props.page.path.split("/").length - 1,
-                  }}
+                  class={cn(
+                    "truncate",
+                    index() === props.page.path.split("/").length - 1 && "font-medium text-foreground",
+                  )}
                 >
                   {segment}
                 </span>

@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
-import { Brain, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-solid";
-import { Match, Show, Switch, createSignal, onMount } from "solid-js";
+import { Brain, CheckCircle2, Eye, EyeOff, Loader2 } from "~/components/icons";
+import { Match, Show, Switch, createSignal, onSettled } from "solid-js";
 
 import { LanguageSwitcher, ThemeToggle } from "~/components/user-menu";
+import { ScrollArea } from "~/components/scroll-area";
 import {
   authMe,
   changePassword,
@@ -52,7 +53,7 @@ function AuthFrame() {
   const [recoverySuccess, setRecoverySuccess] = createSignal(false);
   const [recovering, setRecovering] = createSignal(false);
 
-  onMount(() => {
+  onSettled(() => {
     sessionStorage.removeItem("ai-memory-ui.change-password");
     void ensureTier().then((currentTier) => {
       if (
@@ -187,7 +188,8 @@ function AuthFrame() {
   };
 
   return (
-    <div class="flex min-h-dvh flex-col justify-center items-center p-4 py-8 bg-sidebar-bg text-foreground overflow-y-auto">
+    <ScrollArea fill class="h-dvh bg-sidebar-bg text-foreground">
+    <div class="flex min-h-full flex-col items-center justify-center p-4 py-8">
       <div class="w-full max-w-md my-auto">
         <div class="rounded-md border border-hairline bg-content-bg p-5 shadow-card">
           {/* Card Header com marca + título e controles de idioma/tema embutidos */}
@@ -222,14 +224,14 @@ function AuthFrame() {
               <Match when={showPasswordChange()}>
                 <form class="flex flex-col gap-3.5" onSubmit={(e) => void handlePasswordChangeSubmit(e)}>
                   <label class="flex flex-col gap-1.5" for="password-change-current">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_current_password())}
                     </span>
                     <div class="relative flex items-center">
                       <input
                         id="password-change-current"
                         autocomplete="current-password"
-                        class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary"
+                        class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                         type={showCurrentPassword() ? "text" : "password"}
                         value={currentPassword()}
                         onInput={(e) => {
@@ -251,14 +253,14 @@ function AuthFrame() {
                   </label>
 
                   <label class="flex flex-col gap-1.5" for="password-change-new">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_new_password())}
                     </span>
                     <div class="relative flex items-center">
                       <input
                         id="password-change-new"
                         autocomplete="new-password"
-                        class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary"
+                        class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                         type={showNewPassword() ? "text" : "password"}
                         value={newPassword()}
                         onInput={(e) => {
@@ -277,17 +279,20 @@ function AuthFrame() {
                         </Show>
                       </button>
                     </div>
+                  <p class={cn("text-xs", newPassword().length > 0 && newPassword().length < 12 ? "text-destructive" : "text-muted-foreground")}>
+                      {t(() => m.login_password_hint())}
+                    </p>
                   </label>
 
                   <label class="flex flex-col gap-1.5" for="password-change-confirm">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_confirm_password())}
                     </span>
                     <div class="relative flex items-center">
                       <input
                         id="password-change-confirm"
                         autocomplete="new-password"
-                        class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary"
+                        class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                         type={showConfirmPassword() ? "text" : "password"}
                         value={confirmPassword()}
                         onInput={(e) => {
@@ -306,6 +311,11 @@ function AuthFrame() {
                         </Show>
                       </button>
                     </div>
+                  <Show when={confirmPassword().length > 0 && confirmPassword() !== newPassword()}>
+                      <p class="text-xs text-destructive" role="alert">
+                        {t(() => m.login_password_mismatch())}
+                      </p>
+                    </Show>
                   </label>
 
                   <Show when={changeError()}>
@@ -322,7 +332,7 @@ function AuthFrame() {
                       changing() ||
                       currentPassword().length === 0 ||
                       newPassword().length < 12 ||
-                      confirmPassword().length < 12
+                      confirmPassword() !== newPassword()
                     }
                     type="submit"
                   >
@@ -340,7 +350,7 @@ function AuthFrame() {
               <Match when={mode() === "recovery"}>
                 <form class="flex flex-col gap-3.5" onSubmit={(e) => void handleRecoverySubmit(e)}>
                   <label class="flex flex-col gap-1.5" for="recovery-token">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_recovery_token_label())}
                     </span>
                     <div class="relative flex items-center">
@@ -373,7 +383,7 @@ function AuthFrame() {
                   </label>
 
                   <label class="flex flex-col gap-1.5" for="recovery-new-password">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_new_password())}
                     </span>
                     <div class="relative flex items-center">
@@ -381,7 +391,7 @@ function AuthFrame() {
                         id="recovery-new-password"
                         autocomplete="new-password"
                         data-testid="recovery-new-password"
-                        class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary"
+                        class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                         type={showRecoveryNewPassword() ? "text" : "password"}
                         value={recoveryNewPassword()}
                         onInput={(e) => {
@@ -400,10 +410,13 @@ function AuthFrame() {
                         </Show>
                       </button>
                     </div>
+                  <p class={cn("text-xs", recoveryNewPassword().length > 0 && recoveryNewPassword().length < 12 ? "text-destructive" : "text-muted-foreground")}>
+                      {t(() => m.login_password_hint())}
+                    </p>
                   </label>
 
                   <label class="flex flex-col gap-1.5" for="recovery-confirm-password">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_confirm_password())}
                     </span>
                     <div class="relative flex items-center">
@@ -411,7 +424,7 @@ function AuthFrame() {
                         id="recovery-confirm-password"
                         autocomplete="new-password"
                         data-testid="recovery-confirm-password"
-                        class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary"
+                        class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                         type={showRecoveryConfirmPassword() ? "text" : "password"}
                         value={recoveryConfirmPassword()}
                         onInput={(e) => {
@@ -430,6 +443,11 @@ function AuthFrame() {
                         </Show>
                       </button>
                     </div>
+                  <Show when={recoveryConfirmPassword().length > 0 && recoveryConfirmPassword() !== recoveryNewPassword()}>
+                      <p class="text-xs text-destructive" role="alert">
+                        {t(() => m.login_password_mismatch())}
+                      </p>
+                    </Show>
                   </label>
 
                   <Show when={recoveryError()}>
@@ -443,7 +461,7 @@ function AuthFrame() {
                   <button
                     class="mt-2 flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                     data-testid="recovery-submit"
-                    disabled={recovering() || !recoveryToken().trim() || recoveryNewPassword().length < 12 || recoveryConfirmPassword().length < 12}
+                    disabled={recovering() || !recoveryToken().trim() || recoveryNewPassword().length < 12 || recoveryConfirmPassword() !== recoveryNewPassword()}
                     type="submit"
                   >
                     <Show when={recovering()}>
@@ -479,7 +497,7 @@ function AuthFrame() {
                   </Show>
 
                   <label class="flex flex-col gap-1.5" for="login-username">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_username())}
                     </span>
                     <input
@@ -502,7 +520,7 @@ function AuthFrame() {
                   </label>
 
                   <label class="flex flex-col gap-1.5" for="login-password">
-                    <span class="text-xs font-medium text-muted-foreground">
+                    <span class="text-sm font-medium">
                       {t(() => m.login_field_password())}
                     </span>
                     <div class="relative flex items-center">
@@ -582,6 +600,7 @@ function AuthFrame() {
         </div>
       </div>
     </div>
+    </ScrollArea>
   );
 }
 

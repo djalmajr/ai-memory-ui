@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { For, Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
 import { Input } from "~/components/input";
+import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
@@ -78,10 +79,9 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
         }
       >
         <div class="flex flex-wrap items-end gap-4">
-          <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
             {t(() => m.pending_filter())}
-            <select
-              class="h-8 rounded-md border border-hairline bg-content-bg px-2 text-sm text-foreground"
+            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
               value={status()}
               onChange={(event) => setStatus(event.currentTarget.value as ProposalStatus | "")}
             >
@@ -91,10 +91,9 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
               </For>
             </select>
           </label>
-          <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
             {t(() => m.pending_limit())}
-            <select
-              class="h-8 rounded-md border border-hairline bg-content-bg px-2 text-sm text-foreground"
+            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
               value={String(limit())}
               onChange={(event) => setLimit(Number(event.currentTarget.value))}
             >
@@ -263,9 +262,9 @@ function ProposalCard(props: {
               </div>
               <div>
                 <h3 class="text-xs font-medium text-muted-foreground">{t(() => m.pending_body())}</h3>
-                <pre class="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-hairline bg-sidebar-bg p-2 font-mono text-xs">
-                  {detail().body_markdown}
-                </pre>
+                <ScrollArea class="max-h-48 rounded-md border border-hairline bg-sidebar-bg">
+                  <pre class="whitespace-pre-wrap p-2 font-mono text-xs">{detail().body_markdown}</pre>
+                </ScrollArea>
               </div>
             </div>
           )}
@@ -276,9 +275,9 @@ function ProposalCard(props: {
               <h3 class="text-xs font-medium text-muted-foreground">{t(() => m.pending_diff())}</h3>
               {/* Formato caseiro do engine (`--- before` / `+++ after` / `--- proposed ---`),
                   não `diff -u`. Renderiza cru. */}
-              <pre class="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-hairline bg-sidebar-bg p-2 font-mono text-xs">
-                {diff().diff}
-              </pre>
+              <ScrollArea class="max-h-80 rounded-md border border-hairline bg-sidebar-bg">
+                <pre class="whitespace-pre-wrap p-2 font-mono text-xs">{diff().diff}</pre>
+              </ScrollArea>
             </div>
           )}
         </Show>
@@ -291,7 +290,7 @@ function ProposalCard(props: {
           <div class="flex flex-wrap gap-2">
             <Button
               type="button"
-              size="sm"
+             
               variant="outline"
               onClick={() => {
                 setOpen(true);
@@ -302,7 +301,7 @@ function ProposalCard(props: {
             </Button>
             <Button
               type="button"
-              size="sm"
+             
               variant="destructive"
               disabled={busy() || !canMutate(tier())}
               onClick={() => void regenerate()}
@@ -332,13 +331,12 @@ function ProposalCard(props: {
 
       <Show when={props.proposal.status === "pending" && !decided() && !isConflict()}>
         <div class="flex flex-wrap items-end gap-2">
-          <Button type="button" size="sm" disabled={busy() || !canMutate(tier())} onClick={() => void approve()}>
+          <Button type="button" disabled={busy() || !canMutate(tier())} onClick={() => void approve()}>
             {t(() => m.pending_approve())}
           </Button>
-          <label class="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          <label class="flex min-w-48 flex-1 flex-col gap-1.5 text-sm font-medium">
             {t(() => m.pending_reason())}
             <Input
-              class="h-8"
               value={reason()}
               placeholder={t(() => m.pending_reason_placeholder())}
               onInput={(event) => setReason(event.currentTarget.value)}
@@ -346,7 +344,7 @@ function ProposalCard(props: {
           </label>
           <Button
             type="button"
-            size="sm"
+           
             variant="outline"
             disabled={busy() || !canMutate(tier())}
             onClick={() => void reject(reason())}
@@ -403,7 +401,7 @@ function QueryError(props: { error: Error | null; onRetry: () => void }) {
   return (
     <div class="flex flex-col items-start gap-2" role="alert">
       <p class="text-sm text-destructive">{message()}</p>
-      <Button type="button" size="sm" variant="outline" onClick={props.onRetry}>
+      <Button type="button" variant="outline" onClick={props.onRetry}>
         {t(() => m.state_retry())}
       </Button>
     </div>

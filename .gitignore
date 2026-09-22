@@ -37,3 +37,6 @@ src/routeTree.gen.ts
 
 # Lockfile redundante (usamos npm)
 bun.lock
+
+# Planos locais do agente
+.agents/plans/

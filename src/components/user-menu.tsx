@@ -1,6 +1,6 @@
-import * as PopoverPrimitive from "@kobalte/core/popover";
-import { LogOut, Moon, Sun } from "lucide-solid";
-import { For, Show, createSignal, onMount } from "solid-js";
+import * as PopoverPrimitive from "~/components/popover";
+import { LogOut, Moon, Sun } from "~/components/icons";
+import { For, Show, createSignal, onSettled } from "solid-js";
 
 import { Button } from "~/components/button";
 import { buildLogoutUrl, fetchCurrentUser, type CurrentUser } from "~/lib/api";
@@ -8,6 +8,7 @@ import { locales, switchLocale, t, useLocale } from "~/lib/i18n";
 import type { Locale } from "~/lib/i18n";
 import { theme, toggleTheme } from "~/lib/theme";
 import * as m from "~/paraglide/messages";
+import { cn } from "~/lib/utils";
 
 export const localeNames: Record<Locale, string> = {
   "en": "English",
@@ -37,12 +38,14 @@ export function LanguageSwitcher() {
         {localeFlags[useLocale()]}
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content class="z-50 w-40 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0">
+        <PopoverPrimitive.Content class="z-50 w-40 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none">
           <For each={locales}>
             {(loc) => (
               <button
-                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover"
-                classList={{ "bg-selected text-primary": useLocale() === loc }}
+                class={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover",
+                  useLocale() === loc && "bg-selected text-primary",
+                )}
                 type="button"
                 onClick={() => {
                   switchLocale(loc);
@@ -88,7 +91,9 @@ export function userInitials(name: string): string {
 
 export function Avatar() {
   const [open, setOpen] = createSignal(false);
-  onMount(ensureCurrentUser);
+  onSettled(() => {
+    void ensureCurrentUser();
+  });
   const name = () => userDisplayName(currentUser());
   const initials = () => {
     const user = currentUser();
@@ -143,8 +148,7 @@ export function Avatar() {
 export function ThemeToggle() {
   return (
     <Button
-      aria-label="Toggle color theme"
-      class="ml-auto size-9 shrink-0"
+      aria-label="Toggle color theme" class="ml-auto shrink-0"
       data-testid="theme-toggle"
       size="icon"
       variant="ghost"

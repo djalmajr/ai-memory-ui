@@ -3,13 +3,13 @@ import {
   Activity,
   Archive,
   BookOpen,
-  Brain,
   Cable,
   ChevronLeft,
   Clock,
   Database,
   KeyRound,
   LayoutGrid,
+  Mail,
   Menu,
   Layers,
   Lock,
@@ -22,9 +22,11 @@ import {
   Settings2,
   User as UserIcon,
   Waypoints,
-} from "lucide-solid";
-import { For, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+} from "~/components/icons";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
+import { ScrollArea } from "~/components/scroll-area";
 import { useShellSearch } from "~/components/shell-search";
 import { LanguageSwitcher, ThemeToggle, userInitials } from "~/components/user-menu";
 import {
@@ -72,7 +74,9 @@ interface ShellProps {
   scope?: ScopeRef;
   /** Slot esquerdo do header: título (servidor) ou breadcrumb (escopo). */
   heading: JSX.Element;
-  /** Slot direito do header: subtítulo, status, ações. */
+  /** Linha sob o título, no mesmo bloco do header. */
+  description?: JSX.Element;
+  /** Slot direito do header: status e ações. */
   actions?: JSX.Element;
   /** Contagem da fila de pending writes, quando conhecida. */
   pendingCount?: number;
@@ -164,6 +168,12 @@ export function scopeGroups(scope: ScopeRef, current: Tier, pending?: number): N
   // recebe 401 nessas rotas, então elas não entram na sidebar dele.
   if (admin) {
     items.push({
+      icon: Mail,
+      label: () => m.nav_messages(),
+      to: "/s/$workspace/$project/messages",
+      params,
+    });
+    items.push({
       icon: PencilLine,
       label: () => m.nav_pending(),
       to: "/s/$workspace/$project/pending",
@@ -216,7 +226,7 @@ function NavRow(props: { collapsed?: boolean; item: NavItem; onNavigate?: () => 
         "focus-visible:ring-2 focus-visible:ring-ring",
         active()
           ? "bg-active-item font-medium text-foreground"
-          : "text-muted-foreground hover:bg-hover hover:text-foreground",
+          : "text-foreground hover:bg-hover",
       )}
       aria-current={active() ? "page" : undefined}
       aria-label={props.collapsed ? t(props.item.label) : undefined}
@@ -253,7 +263,7 @@ function roleLabel(current: Tier): string {
   }
 }
 
-function UserMenu(props: { collapsed?: boolean }) {
+function UserMenu() {
   const [open, setOpen] = createSignal(false);
   const navigate = useNavigate();
 
@@ -271,30 +281,28 @@ function UserMenu(props: { collapsed?: boolean }) {
   return (
     <div class="relative">
       <button
-        class={cn(
-          "flex w-full items-center rounded-md py-1.5 text-left outline-none transition hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
-          props.collapsed ? "justify-center px-0" : "gap-2 px-2",
-        )}
+        class="inline-flex size-8 shrink-0 items-center justify-center rounded-full outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         type="button"
-        aria-label={props.collapsed ? label() : undefined}
-        title={props.collapsed ? label() : undefined}
+        aria-label={label()}
+        title={label()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="grid size-7 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+        <span class="grid size-8 place-items-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
           {initials()}
         </span>
-        <Show when={!props.collapsed}>
-        <span class="flex min-w-0 flex-1 flex-col leading-tight">
-          <span class="truncate text-sm" title={label()}>
-            {label()}
-          </span>
-          <span class="truncate text-xs text-muted-foreground">{t(() => roleLabel(tier()))}</span>
-        </span>
-        </Show>
       </button>
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div class="absolute bottom-full left-0 z-50 mb-1 w-52 overflow-hidden rounded-lg border border-hairline bg-popover p-1 text-popover-foreground shadow-xl">
+        <div class="absolute top-full right-0 z-50 mt-1 w-56 overflow-hidden rounded-lg border border-hairline bg-popover p-1 text-popover-foreground shadow-xl">
+          <div class="flex items-center gap-3 px-2 py-1.5">
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+              {initials()}
+            </span>
+            <span class="flex min-w-0 flex-col leading-tight">
+              <span class="truncate text-sm font-medium">{label()}</span>
+              <span class="truncate text-xs text-muted-foreground">{t(() => roleLabel(tier()))}</span>
+            </span>
+          </div>
           <button
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
             type="button"
@@ -336,16 +344,16 @@ function SidebarContent(props: {
 }) {
   return (
     <>
-      <div class={cn("flex items-center gap-2", props.collapsed ? "justify-center" : "justify-between")}>
-        <Show
-          fallback={<Brain aria-label={t(() => m.brand_name())} class="text-primary" size={18} />}
-          when={!props.collapsed}
-        >
-          {/* A marca não navega: é rótulo do produto, não botão de início. */}
-          <span class="text-sm font-semibold">{t(() => m.brand_name())}</span>
-          <div class="flex items-center gap-0.5">
-            <LanguageSwitcher />
-            <ThemeToggle />
+      <div class={cn("flex items-center gap-2 px-1", props.collapsed && "justify-center px-0")}>
+        <img
+          alt=""
+          class="size-8 shrink-0"
+          src={`${import.meta.env.BASE_URL}favicon.svg`}
+        />
+        <Show when={!props.collapsed}>
+          <div class="flex min-w-0 flex-col">
+            <span class="truncate text-sm font-semibold leading-tight">{t(() => m.brand_name())}</span>
+            <span class="truncate text-xs leading-tight text-muted-foreground">{t(() => m.brand_subtitle())}</span>
           </div>
         </Show>
       </div>
@@ -388,7 +396,8 @@ function SidebarContent(props: {
         )}
       </Show>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+      <ScrollArea fill class="min-h-0 flex-1">
+        <div class="flex flex-col gap-4">
         <For each={props.groups}>
           {(group) => (
             <div class="flex flex-col gap-0.5">
@@ -405,9 +414,8 @@ function SidebarContent(props: {
             </div>
           )}
         </For>
-      </div>
-
-      <UserMenu collapsed={props.collapsed} />
+        </div>
+      </ScrollArea>
     </>
   );
 }
@@ -435,13 +443,13 @@ export function Shell(props: ShellProps) {
   // atalho ⌘K, em vez de cada tela montar a própria paleta.
   const search = useShellSearch();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
-  onMount(() => {
-    const closeMobileNav = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileNavOpen(false);
-    };
-    window.addEventListener("keydown", closeMobileNav);
-    onCleanup(() => window.removeEventListener("keydown", closeMobileNav));
-  });
+  // Registered in the component body, not in `onSettled`: that hook waits for
+  // the shell's queries to settle, and a keypress before then was lost.
+  const closeMobileNav = (event: KeyboardEvent) => {
+    if (event.key === "Escape") setMobileNavOpen(false);
+  };
+  window.addEventListener("keydown", closeMobileNav);
+  onCleanup(() => window.removeEventListener("keydown", closeMobileNav));
 
   const [collapsed, setCollapsed] = createSignal(loadSidebarCollapsed());
   const toggleCollapsed = () => {
@@ -458,7 +466,7 @@ export function Shell(props: ShellProps) {
     <div class="flex h-screen min-h-0 w-full bg-sidebar-bg text-foreground">
       <Show when={mobileNavOpen()}>
         <button
-          class="fixed inset-0 z-40 bg-sidebar-bg/70 lg:hidden"
+          class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
           type="button"
           aria-label="Close navigation"
           onClick={() => setMobileNavOpen(false)}
@@ -468,7 +476,7 @@ export function Shell(props: ShellProps) {
       {/* Sidebar móvel: overlay fixo por cima do conteúdo, sem redimensionar. */}
       <nav
         class={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[220px] flex-col gap-4 bg-sidebar-bg p-4 transition-transform lg:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-[220px] min-h-0 flex-col gap-4 bg-sidebar-bg p-4 transition-transform lg:hidden",
           mobileNavOpen() ? "visible translate-x-0" : "invisible -translate-x-full",
         )}
         aria-label="Primary navigation"
@@ -489,7 +497,7 @@ export function Shell(props: ShellProps) {
       {/* Sidebar desktop: largura fixa; o botão do header alterna o rail de ícones. */}
       <nav
         class={cn(
-          "hidden shrink-0 flex-col gap-4 bg-sidebar-bg p-2 pr-0 lg:flex",
+          "hidden min-h-0 shrink-0 flex-col gap-4 bg-sidebar-bg p-2 pr-0 lg:flex",
           collapsed() ? "w-[52px]" : "w-[220px]",
         )}
         aria-label="Primary navigation"
@@ -506,13 +514,13 @@ export function Shell(props: ShellProps) {
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col p-2">
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-hairline bg-content-bg shadow-card">
-          <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-hairline px-4">
-            <div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
+            <div class="flex min-w-0 items-center gap-2">
               <button
                 class="-ml-1 rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
                 type="button"
                 aria-label="Open navigation"
-                aria-expanded={mobileNavOpen()}
+                aria-expanded={mobileNavOpen() ? "true" : "false"}
                 onClick={() => setMobileNavOpen(true)}
               >
                 <Menu size={18} />
@@ -520,20 +528,34 @@ export function Shell(props: ShellProps) {
               <button
                 class="-ml-1 hidden rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
                 type="button"
-                aria-expanded={!collapsed()}
+                aria-expanded={!collapsed() ? "true" : "false"}
                 aria-label={t(() => m.shell_toggle_sidebar())}
                 title={t(() => m.shell_toggle_sidebar())}
                 onClick={toggleCollapsed}
               >
                 <PanelLeft size={17} />
               </button>
-              {props.heading}
+              <div class="flex min-w-0 flex-col">
+                <div class="truncate text-sm font-medium leading-tight">{props.heading}</div>
+                <Show when={props.description}>
+                  <div class="truncate text-xs leading-tight text-muted-foreground">{props.description}</div>
+                </Show>
+              </div>
             </div>
-            <div class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-              {props.actions}
+            <div class="ml-auto flex shrink-0 items-center gap-2">
+              <Show when={props.actions}>
+                <div class="flex items-center gap-2 text-xs text-muted-foreground">{props.actions}</div>
+              </Show>
+              <div class="flex items-center gap-0.5">
+                <LanguageSwitcher />
+                <ThemeToggle />
+              </div>
+              <UserMenu />
             </div>
           </header>
-          <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{props.children}</div>
+          <ScrollArea fill class="min-h-0 flex-1">
+            <div class="flex min-h-full flex-col gap-4 p-4">{props.children}</div>
+          </ScrollArea>
         </div>
       </div>
 

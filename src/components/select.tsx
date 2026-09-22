@@ -1,109 +1,81 @@
-import type { JSX, ValidComponent } from "solid-js"
-import { splitProps } from "solid-js"
+import { For, Show, createSignal } from "solid-js";
 
-import * as SelectPrimitive from "@kobalte/core/select"
-import type { PolymorphicProps } from "@kobalte/core/polymorphic"
+import { Check, ChevronDown } from "~/components/icons";
+import { ScrollArea } from "~/components/scroll-area";
+import {
+  Content as PopoverContent,
+  Portal as PopoverPortal,
+  Root as PopoverRoot,
+  Trigger as PopoverTrigger,
+} from "~/components/popover";
+import { cn } from "~/lib/utils";
 
-import { cn } from "~/lib/utils"
+// Appliance `Select` (shadcn base-nova) on the hand-rolled popover. Base UI's
+// select is React-only, and the open animation stays off for the same reason
+// as the popover: `transform` is the position, not a motion.
 
-const Select = SelectPrimitive.Root
-const SelectValue = SelectPrimitive.Value
-const SelectHiddenSelect = SelectPrimitive.HiddenSelect
+export function Select<T extends string>(props: {
+  disabled?: boolean;
+  onChange: (value: T) => void;
+  options: { label: string; value: T }[];
+  value: T;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const [width, setWidth] = createSignal(0);
+  let anchor: HTMLDivElement | undefined;
+  const measure = () => {
+    if (anchor) setWidth(anchor.offsetWidth);
+  };
+  const label = () => props.options.find((option) => option.value === props.value)?.label ?? "";
 
-type SelectTriggerProps<T extends ValidComponent = "button"> =
-  SelectPrimitive.SelectTriggerProps<T> & {
-    class?: string | undefined
-    children?: JSX.Element
-  }
-
-const SelectTrigger = <T extends ValidComponent = "button">(
-  props: PolymorphicProps<T, SelectTriggerProps<T>>
-) => {
-  const [local, others] = splitProps(props as SelectTriggerProps, ["class", "children"])
   return (
-    <SelectPrimitive.Trigger
-      class={cn(
-        "flex h-9 items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-sm outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-        local.class
-      )}
-      {...others}
-    >
-      {local.children}
-      <SelectPrimitive.Icon
-        as="svg"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="size-3.5 shrink-0 text-muted-foreground"
-      >
-        <path d="M6 9l6 6l6 -6" />
-      </SelectPrimitive.Icon>
-    </SelectPrimitive.Trigger>
-  )
-}
-
-type SelectContentProps<T extends ValidComponent = "div"> =
-  SelectPrimitive.SelectContentProps<T> & { class?: string | undefined }
-
-const SelectContent = <T extends ValidComponent = "div">(
-  props: PolymorphicProps<T, SelectContentProps<T>>
-) => {
-  const [local, others] = splitProps(props as SelectContentProps, ["class"])
-  return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Content
-        class={cn(
-          "relative z-50 min-w-[8rem] overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl",
-          local.class
-        )}
-        {...others}
-      >
-        <SelectPrimitive.Listbox class="m-0 p-0" />
-      </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
-  )
-}
-
-type SelectItemProps<T extends ValidComponent = "li"> = SelectPrimitive.SelectItemProps<T> & {
-  class?: string | undefined
-  children?: JSX.Element
-}
-
-const SelectItem = <T extends ValidComponent = "li">(
-  props: PolymorphicProps<T, SelectItemProps<T>>
-) => {
-  const [local, others] = splitProps(props as SelectItemProps, ["class", "children"])
-  return (
-    <SelectPrimitive.Item
-      class={cn(
-        "relative flex cursor-pointer select-none items-center rounded-md py-1.5 pl-2 pr-8 text-sm outline-none transition hover:bg-hover data-[highlighted]:bg-hover data-[selected]:bg-selected data-[selected]:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        local.class
-      )}
-      {...others}
-    >
-      <SelectPrimitive.ItemLabel>{local.children}</SelectPrimitive.ItemLabel>
-      <span class="absolute right-2 flex size-3.5 items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="size-3.5"
+    <div class="w-full" ref={anchor} onPointerDown={measure}>
+      <PopoverRoot gutter={4} open={open()} placement="bottom-start" onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-haspopup="listbox"
+          class="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap outline-none transition-colors select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50"
+          disabled={props.disabled}
+          onClick={measure}
+        >
+          <span class="line-clamp-1 flex-1 text-left">{label()}</span>
+          <ChevronDown class="text-muted-foreground" size={16} />
+        </PopoverTrigger>
+        <PopoverPortal>
+          <PopoverContent
+            class="z-[70] w-auto min-w-36 gap-0 p-0"
+            role="listbox"
+            style={{ width: width() > 0 ? `${width()}px` : undefined }}
           >
-            <path d="M5 12l5 5l10 -10" />
-          </svg>
-        </SelectPrimitive.ItemIndicator>
-      </span>
-    </SelectPrimitive.Item>
-  )
+            <ScrollArea class="max-h-72 p-1">
+            <For each={props.options}>
+              {(option) => {
+                const selected = () => option.value === props.value;
+                return (
+                  <button
+                    aria-selected={selected()}
+                    class={cn(
+                      "relative flex w-full cursor-default items-center rounded-md py-1 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground",
+                      selected() && "bg-accent/60",
+                    )}
+                    role="option"
+                    type="button"
+                    onClick={() => {
+                      props.onChange(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    {option.label}
+                    <Show when={selected()}>
+                      <Check class="pointer-events-none absolute right-2" size={16} />
+                    </Show>
+                  </button>
+                );
+              }}
+              </For>
+            </ScrollArea>
+          </PopoverContent>
+        </PopoverPortal>
+      </PopoverRoot>
+    </div>
+  );
 }
-
-export { Select, SelectContent, SelectHiddenSelect, SelectItem, SelectTrigger, SelectValue }

@@ -1,11 +1,12 @@
-import * as PopoverPrimitive from "@kobalte/core/popover";
-import { createVirtualizer } from "@tanstack/solid-virtual";
-import { Box, Boxes, ChevronDown, ChevronRight, Search } from "lucide-solid";
+import * as PopoverPrimitive from "~/components/popover";
+import { createVirtualizer } from "~/lib/virtualizer";
+import { Box, Boxes, ChevronDown, ChevronRight, Search } from "~/components/icons";
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 
+import { ScrollArea } from "~/components/scroll-area";
 import { t } from "~/lib/i18n";
 import type { ProjectKey, WorkspaceWithProjects } from "~/lib/types";
-import { highlightSegments } from "~/lib/utils";
+import { cn, highlightSegments } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 
 /**
@@ -22,7 +23,7 @@ import * as m from "~/paraglide/messages";
  *   - Click on a workspace row → selects workspace (open in "all projects"
  *     mode); click on a project leaf → selects that workspace + project.
  *
- * Built on `@kobalte/core/popover` so keyboard focus + outside-click + a11y
+ * Built on `~/components/popover` so keyboard focus + outside-click + a11y
  * are handled. Search highlight is rendered via `<HighlightMatch>` which
  * splits the matched substring into `<mark>` segments.
  */
@@ -137,7 +138,6 @@ export function WorkspaceProjectCascader(props: {
   return (
     <PopoverPrimitive.Root open={open()} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger
-        as="button"
         class="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-sm outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="workspace-switcher"
         type="button"
@@ -182,7 +182,7 @@ export function WorkspaceProjectCascader(props: {
               }
               when={searchHits().length > 0}
             >
-              <div ref={setHitsScrollEl} class="h-80 overflow-y-auto p-1">
+              <ScrollArea class="h-80 p-1" viewportRef={setHitsScrollEl}>
                 <div style={{ height: `${hitsVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                   <For each={hitsVirtualizer.getVirtualItems()}>
                     {(vItem) => {
@@ -222,26 +222,25 @@ export function WorkspaceProjectCascader(props: {
                     }}
                   </For>
                 </div>
-              </div>
+              </ScrollArea>
             </Show>
           </Show>
           {/* Two-column cascader view (no active search) */}
           <Show when={!searchTerm().trim()}>
             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] divide-x">
               {/* Left: workspaces (virtualized) */}
-              <div ref={setWorkspacesScrollEl} class="h-80 overflow-y-auto p-1">
+              <ScrollArea class="h-80 p-1" viewportRef={setWorkspacesScrollEl}>
                 <div style={{ height: `${workspacesVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                   <For each={workspacesVirtualizer.getVirtualItems()}>
                     {(vItem) => {
                       const ws = props.workspaces[vItem.index]!;
                       return (
                         <button
-                          class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                          classList={{
-                            "bg-selected text-primary":
-                              activeWorkspace() === ws.workspace_name && props.currentProject === null,
-                            "bg-hover": activeWorkspace() === ws.workspace_name,
-                          }}
+                          class={cn(
+                            "absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
+                            activeWorkspace() === ws.workspace_name && "bg-hover",
+                            activeWorkspace() === ws.workspace_name && props.currentProject === null && "bg-selected text-primary",
+                          )}
                           style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
                           type="button"
                           onMouseEnter={() => setHoveredWs(ws.workspace_name)}
@@ -262,9 +261,9 @@ export function WorkspaceProjectCascader(props: {
                     }}
                   </For>
                 </div>
-              </div>
+              </ScrollArea>
               {/* Right: projects of the active workspace (virtualized) */}
-              <div ref={setProjectsScrollEl} class="h-80 overflow-y-auto p-1">
+              <ScrollArea class="h-80 p-1" viewportRef={setProjectsScrollEl}>
                 <Show
                   fallback={
                     <p class="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -285,12 +284,12 @@ export function WorkspaceProjectCascader(props: {
                         const project = createMemo(() => activeProjects()[vItem.index]!);
                         return (
                           <button
-                            class="absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                            classList={{
-                              "bg-selected text-primary":
-                                props.currentProject === project().project_name &&
-                                props.currentWorkspace === project().workspace_name,
-                            }}
+                            class={cn(
+                              "absolute left-0 right-0 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
+                              props.currentProject === project().project_name &&
+                                props.currentWorkspace === project().workspace_name &&
+                                "bg-selected text-primary",
+                            )}
                             style={{ height: `${vItem.size}px`, transform: `translateY(${vItem.start}px)` }}
                             type="button"
                             onClick={() => pickProject(project().workspace_name, project().project_name)}
@@ -308,7 +307,7 @@ export function WorkspaceProjectCascader(props: {
                     </For>
                   </div>
                 </Show>
-              </div>
+              </ScrollArea>
             </div>
           </Show>
         </PopoverPrimitive.Content>

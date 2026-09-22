@@ -1,12 +1,16 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
+import { Filter } from "~/components/icons";
 import { Input } from "~/components/input";
+import { Content as PopoverContent, Portal as PopoverPortal, Root as PopoverRoot, Trigger as PopoverTrigger } from "~/components/popover";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState } from "~/components/ui-bits";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminAuditContamination,
   adminAuditLog,
@@ -21,14 +25,14 @@ import { formatDateTime, fromMicros, fromRfc3339 } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import * as m from "~/paraglide/messages";
 
-// Auditoria (nível servidor) — três blocos independentes.
+// Auditoria (nível servidor) — três visões independentes, uma por aba.
 //
 // 1. Contaminação: `workspace`+`project` juntos ou ambos omitidos; um só → 400.
 // 2. Lint/curator sob demanda. Defaults do engine (`default`/`scratch`) NÃO
 //    são confiáveis: a tela sempre envia o par dos inputs.
-// 3. Trilha: `GET /admin/audit-log` ainda não existe em origin/main — 404
-//    esconde o bloco. `audit_log.detail` é literal "{}" na única inserção
-//    (`ops.rs`); sem drawer de payload.
+// 3. Trilha: `GET /admin/audit-log` devolve `{ events }`. 404 (engine antigo,
+//    sem o leitor) esconde o bloco. `detail` continua string — o writer grava
+//    o literal `"{}"` — então não há drawer de payload.
 
 const DEFAULT_WORKSPACE = "default";
 const DEFAULT_PROJECT = "scratch";
@@ -40,16 +44,100 @@ function failMessage(error: unknown): string {
   return String(error);
 }
 
+function ScopeFilter(props: {
+  applied: ScopeArgs | undefined;
+  partial: boolean;
+  project: string;
+  workspace: string;
+  onApply: () => boolean;
+  onClear: () => void;
+  onProject: (value: string) => void;
+  onWorkspace: (value: string) => void;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const submit = (event: SubmitEvent) => {
+    event.preventDefault();
+    if (props.onApply()) setOpen(false);
+  };
+  const clear = () => {
+    props.onClear();
+    setOpen(false);
+  };
+  return (
+    <PopoverRoot gutter={4} open={open()} placement="bottom-end" onOpenChange={setOpen}>
+      <PopoverTrigger class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-normal hover:bg-muted">
+        <Filter class="text-muted-foreground" size={16} />
+        {t(() => m.audit_scope_filter())}
+        <Show when={props.applied}>
+          {(scope) => (
+            <Badge class="max-w-36 truncate rounded-sm px-1 font-normal" variant="secondary">
+              {scope().workspace}/{scope().project}
+            </Badge>
+          )}
+        </Show>
+      </PopoverTrigger>
+      <PopoverPortal>
+        <PopoverContent class="w-96">
+          <form class="flex flex-col gap-3" onSubmit={submit}>
+            <div class="flex flex-col gap-1">
+              <p class="text-sm font-medium">{t(() => m.audit_scope_filter())}</p>
+              <p class="text-xs text-muted-foreground">{t(() => m.audit_scope_hint())}</p>
+            </div>
+            <div class="flex gap-2">
+              <label class="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium">
+                {t(() => m.audit_scope_workspace())}
+                <Input
+                  value={props.workspace}
+                  onInput={(event) => props.onWorkspace(event.currentTarget.value)}
+                />
+              </label>
+              <label class="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium">
+                {t(() => m.audit_scope_project())}
+                <Input
+                  value={props.project}
+                  onInput={(event) => props.onProject(event.currentTarget.value)}
+                />
+              </label>
+            </div>
+            <Show when={props.partial}>
+              <p class="text-xs text-destructive">{t(() => m.audit_scope_together())}</p>
+            </Show>
+            <div class="flex gap-2">
+              <Button type="submit">{t(() => m.audit_scope_apply())}</Button>
+              <Button type="button" variant="outline" onClick={clear}>
+                {t(() => m.audit_scope_clear())}
+              </Button>
+            </div>
+          </form>
+        </PopoverContent>
+      </PopoverPortal>
+    </PopoverRoot>
+  );
+}
+
 export function AuditScreen() {
   return (
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_audit())}</span>}
-      actions={<span>{t(() => m.audit_subtitle())}</span>}
+      description={<span>{t(() => m.audit_subtitle())}</span>}
     >
-      <ContaminationBlock />
-      <ReportsBlock />
-      <AuditLogBlock />
+      <Tabs defaultValue="contamination">
+        <TabsList>
+          <TabsTrigger value="contamination">{t(() => m.audit_contamination_title())}</TabsTrigger>
+          <TabsTrigger value="reports">{t(() => m.audit_reports_title())}</TabsTrigger>
+          <TabsTrigger value="log">{t(() => m.audit_log_title())}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="contamination">
+          <ContaminationBlock />
+        </TabsContent>
+        <TabsContent value="reports">
+          <ReportsBlock />
+        </TabsContent>
+        <TabsContent value="log">
+          <AuditLogBlock />
+        </TabsContent>
+      </Tabs>
     </Shell>
   );
 }
@@ -74,54 +162,24 @@ function ContaminationBlock() {
     if ((ws && !proj) || (!ws && proj)) {
       // Um só parâmetro faz o engine responder 400 JSON.
       setPartial(true);
-      return;
+      return false;
     }
     setPartial(false);
     setApplied(ws && proj ? { workspace: ws, project: proj } : undefined);
+    return true;
+  };
+
+  const clearScope = () => {
+    setWorkspace("");
+    setProject("");
+    setPartial(false);
+    setApplied(undefined);
   };
 
   const findings = () => q.data?.findings ?? [];
-  const misbucketed = () => q.data?.summary.sessions_misbucketed ?? 0;
 
   return (
     <section class="flex flex-col gap-4">
-      <h2 class="text-sm font-semibold">{t(() => m.audit_contamination_title())}</h2>
-      <form
-        class="flex flex-wrap items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          applyScope();
-        }}
-      >
-        <label class="flex min-w-[160px] flex-col gap-1 text-xs text-muted-foreground">
-          {t(() => m.audit_scope_workspace())}
-          <Input
-            class="h-9"
-            value={workspace()}
-            onInput={(event) => setWorkspace(event.currentTarget.value)}
-          />
-        </label>
-        <label class="flex min-w-[160px] flex-col gap-1 text-xs text-muted-foreground">
-          {t(() => m.audit_scope_project())}
-          <Input
-            class="h-9"
-            value={project()}
-            onInput={(event) => setProject(event.currentTarget.value)}
-          />
-        </label>
-        <Button size="sm" type="submit">
-          {t(() => m.audit_scope_apply())}
-        </Button>
-        <span class="text-xs text-muted-foreground">
-          <Show when={applied()} fallback={t(() => m.audit_scope_global())}>
-            {(scope) => `${scope().workspace}/${scope().project}`}
-          </Show>
-        </span>
-      </form>
-      <Show when={partial()}>
-        <p class="text-sm text-destructive">{t(() => m.audit_scope_together())}</p>
-      </Show>
-
       <Show when={!q.isPending} fallback={<LoadingBlock />}>
         <Show
           when={!(q.isError && q.data === undefined)}
@@ -132,71 +190,32 @@ function ContaminationBlock() {
             />
           }
         >
-          <p class="text-sm">
-            {t(() => m.audit_contamination_summary({ count: misbucketed() }))}
-          </p>
-          <Show
-            when={findings().length > 0}
-            fallback={
-              <EmptyState
-                title={t(() => m.state_empty_title())}
-                body={t(() => m.audit_empty_contamination())}
+          <DataGrid
+            beforeSort={
+              <ScopeFilter
+                applied={applied()}
+                partial={partial()}
+                project={project()}
+                workspace={workspace()}
+                onApply={applyScope}
+                onClear={clearScope}
+                onProject={setProject}
+                onWorkspace={setWorkspace}
               />
             }
-          >
-            <div class="overflow-x-auto rounded-lg border border-hairline">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="border-b border-hairline text-xs text-muted-foreground">
-                    <th class="w-[140px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_check())}
-                    </th>
-                    <th class="w-[110px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_confidence())}
-                    </th>
-                    <th class="w-[120px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_entity_kind())}
-                    </th>
-                    <th class="w-[180px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_entity_id())}
-                    </th>
-                    <th class="w-[140px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_landed_ws())}
-                    </th>
-                    <th class="w-[140px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_landed_proj())}
-                    </th>
-                    <th class="w-[140px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_expected())}
-                    </th>
-                    <th class="min-w-[160px] px-4 py-2 text-left font-medium">
-                      {t(() => m.audit_col_cwd())}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={findings()}>
-                    {(row) => (
-                      <tr class="border-b border-hairline last:border-0">
-                        <td class="px-4 py-2 font-mono">{row.check}</td>
-                        <td class="px-4 py-2">{row.confidence}</td>
-                        <td class="px-4 py-2 font-mono">{row.entity_kind}</td>
-                        <td class="truncate px-4 py-2 font-mono" title={row.entity_id}>
-                          {row.entity_id}
-                        </td>
-                        <td class="px-4 py-2 font-mono">{row.landed_workspace}</td>
-                        <td class="px-4 py-2 font-mono">{row.landed_project}</td>
-                        <td class="px-4 py-2 font-mono">{row.expected_project ?? DASH}</td>
-                        <td class="truncate px-4 py-2 font-mono" title={row.cwd ?? undefined}>
-                          {row.cwd ?? DASH}
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
-          </Show>
+            empty={t(() => m.audit_empty_contamination())}
+            items={findings()}
+            columns={[
+              { id: "check", label: t(() => m.audit_col_check()), class: "w-[140px] font-mono", search: (row) => `${row.check} ${row.entity_id}`, sortValue: (row) => row.check, cell: (row) => row.check },
+              { id: "confidence", label: t(() => m.audit_col_confidence()), class: "w-[110px]", filter: { label: t(() => m.audit_col_confidence()), value: (row) => row.confidence }, sortValue: (row) => row.confidence, cell: (row) => row.confidence },
+              { id: "kind", label: t(() => m.audit_col_entity_kind()), class: "w-[120px] font-mono", sortValue: (row) => row.entity_kind, cell: (row) => row.entity_kind },
+              { id: "id", label: t(() => m.audit_col_entity_id()), class: "w-[180px] truncate font-mono", sortValue: (row) => row.entity_id, cell: (row) => row.entity_id },
+              { id: "ws", label: t(() => m.audit_col_landed_ws()), class: "w-[140px] font-mono", sortValue: (row) => row.landed_workspace, cell: (row) => row.landed_workspace },
+              { id: "proj", label: t(() => m.audit_col_landed_proj()), class: "w-[140px] font-mono", sortValue: (row) => row.landed_project, cell: (row) => row.landed_project },
+              { id: "expected", label: t(() => m.audit_col_expected()), class: "w-[140px] font-mono", cell: (row) => row.expected_project ?? DASH },
+              { id: "cwd", label: t(() => m.audit_col_cwd()), class: "min-w-[160px] truncate font-mono", cell: (row) => row.cwd ?? DASH },
+            ]}
+          />
         </Show>
       </Show>
     </section>
@@ -247,29 +266,26 @@ function ReportsBlock() {
 
   return (
     <section class="flex flex-col gap-4">
-      <h2 class="text-sm font-semibold">{t(() => m.audit_reports_title())}</h2>
       <div class="flex flex-wrap items-end gap-2">
-        <label class="flex min-w-[160px] flex-col gap-1 text-xs text-muted-foreground">
+        <label class="flex min-w-[160px] flex-col gap-1.5 text-sm font-medium">
           {t(() => m.audit_scope_workspace())}
           <Input
-            class="h-9"
             value={workspace()}
             onInput={(event) => setWorkspace(event.currentTarget.value)}
           />
         </label>
-        <label class="flex min-w-[160px] flex-col gap-1 text-xs text-muted-foreground">
+        <label class="flex min-w-[160px] flex-col gap-1.5 text-sm font-medium">
           {t(() => m.audit_scope_project())}
           <Input
-            class="h-9"
             value={project()}
             onInput={(event) => setProject(event.currentTarget.value)}
           />
         </label>
-        <Button size="sm" type="button" disabled={lintPending()} onClick={() => void runLint()}>
+        <Button type="button" disabled={lintPending()} onClick={() => void runLint()}>
           {t(() => m.audit_lint_run())}
         </Button>
         <Button
-          size="sm"
+         
           type="button"
           variant="outline"
           disabled={curatorPending()}
@@ -287,25 +303,16 @@ function ReportsBlock() {
       </Show>
       <Show when={!lintPending() && !lintError() && lintReport()}>
         {(report) => (
-          <Show
-            when={report().findings.length > 0}
-            fallback={
-              <EmptyState
-                title={t(() => m.state_empty_title())}
-                body={t(() => m.audit_empty_lint())}
-              />
-            }
-          >
-            <FindingsTable
-              rows={report().findings.map((finding) => ({
-                kind: finding.kind,
-                severity: finding.severity,
-                message: finding.message,
-                pages: finding.pages,
-                detail: finding.detail,
-              }))}
-            />
-          </Show>
+          <FindingsTable
+            empty={t(() => m.audit_empty_lint())}
+            rows={report().findings.map((finding) => ({
+              kind: finding.kind,
+              severity: finding.severity,
+              message: finding.message,
+              pages: finding.pages,
+              detail: finding.detail,
+            }))}
+          />
         )}
       </Show>
 
@@ -323,25 +330,16 @@ function ReportsBlock() {
               {formatDateTime(fromRfc3339(report().generated_at))} · {report().workspace}/
               {report().project}
             </p>
-            <Show
-              when={report().findings.length > 0}
-              fallback={
-                <EmptyState
-                  title={t(() => m.state_empty_title())}
-                  body={t(() => m.audit_empty_curator())}
-                />
-              }
-            >
-              <FindingsTable
-                rows={report().findings.map((finding) => ({
-                  kind: finding.kind,
-                  severity: finding.severity,
-                  message: finding.message,
-                  pages: finding.pages,
-                  detail: stringDetail(finding.detail),
-                }))}
-              />
-            </Show>
+            <FindingsTable
+              empty={t(() => m.audit_empty_curator())}
+              rows={report().findings.map((finding) => ({
+                kind: finding.kind,
+                severity: finding.severity,
+                message: finding.message,
+                pages: finding.pages,
+                detail: stringDetail(finding.detail),
+              }))}
+            />
           </div>
         )}
       </Show>
@@ -357,7 +355,6 @@ function AuditLogBlock() {
 
   return (
     <section class="flex flex-col gap-4">
-      <h2 class="text-sm font-semibold">{t(() => m.audit_log_title())}</h2>
       <Show when={!q.isPending} fallback={<LoadingBlock />}>
         <Show
           when={!(q.isError && q.data === undefined)}
@@ -372,17 +369,7 @@ function AuditLogBlock() {
             when={q.data !== null}
             fallback={<p class="text-sm text-muted-foreground">{t(() => m.audit_log_missing())}</p>}
           >
-            <Show
-              when={(q.data ?? []).length > 0}
-              fallback={
-                <EmptyState
-                  title={t(() => m.state_empty_title())}
-                  body={t(() => m.audit_empty_log())}
-                />
-              }
-            >
-              <LogTable events={q.data ?? []} />
-            </Show>
+            <LogTable empty={t(() => m.audit_empty_log())} events={q.data ?? []} />
           </Show>
         </Show>
       </Show>
@@ -390,96 +377,38 @@ function AuditLogBlock() {
   );
 }
 
-function LogTable(props: { events: AuditEvent[] }) {
+function LogTable(props: { empty: string; events: AuditEvent[] }) {
   return (
-    <div class="overflow-x-auto rounded-lg border border-hairline">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-hairline text-xs text-muted-foreground">
-            <th class="w-[160px] px-4 py-2 text-left font-medium">{t(() => m.audit_col_at())}</th>
-            <th class="w-[140px] px-4 py-2 text-left font-medium">{t(() => m.audit_col_op())}</th>
-            <th class="w-[140px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_workspace())}
-            </th>
-            <th class="w-[140px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_project())}
-            </th>
-            <th class="min-w-[180px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_page())}
-            </th>
-            <th class="w-[140px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_author())}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={props.events}>
-            {(event) => (
-              <tr class="border-b border-hairline last:border-0">
-                <td class="px-4 py-2 tabular-nums">
-                  {formatDateTime(fromMicros(event.at))}
-                </td>
-                <td class="px-4 py-2 font-mono">{event.op}</td>
-                <td class="px-4 py-2 font-mono">{event.workspace ?? DASH}</td>
-                <td class="px-4 py-2 font-mono">{event.project ?? DASH}</td>
-                <td class="truncate px-4 py-2 font-mono" title={event.page_path ?? undefined}>
-                  {event.page_path ?? DASH}
-                </td>
-                <td class="px-4 py-2">{event.author_username ?? DASH}</td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
+    <DataGrid
+      empty={props.empty}
+      items={props.events}
+      columns={[
+        { id: "at", label: t(() => m.audit_col_at()), class: "w-[160px] tabular-nums", sortValue: (event) => event.at, cell: (event) => formatDateTime(fromMicros(event.at)) },
+        { id: "op", label: t(() => m.audit_col_op()), class: "w-[140px] font-mono", search: (event) => `${event.op} ${event.page_path ?? ""}`, filter: { label: t(() => m.audit_col_op()), value: (event) => event.op }, sortValue: (event) => event.op, cell: (event) => event.op },
+        { id: "workspace", label: t(() => m.audit_col_workspace()), class: "w-[140px] font-mono", cell: (event) => event.workspace ?? DASH },
+        { id: "project", label: t(() => m.audit_col_project()), class: "w-[140px] font-mono", cell: (event) => event.project ?? DASH },
+        { id: "page", label: t(() => m.audit_col_page()), class: "min-w-[180px] truncate font-mono", cell: (event) => event.page_path ?? DASH },
+        { id: "author", label: t(() => m.audit_col_author()), class: "w-[140px]", sortValue: (event) => event.author_username ?? "", cell: (event) => event.author_username ?? DASH },
+      ]}
+    />
   );
 }
 
 function FindingsTable(props: {
+  empty: string;
   rows: { kind: string; severity: string; message: string; pages: string[]; detail: string | null }[];
 }) {
   return (
-    <div class="overflow-x-auto rounded-lg border border-hairline">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-hairline text-xs text-muted-foreground">
-            <th class="w-[120px] px-4 py-2 text-left font-medium">{t(() => m.audit_col_kind())}</th>
-            <th class="w-[110px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_severity())}
-            </th>
-            <th class="min-w-[200px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_message())}
-            </th>
-            <th class="w-[220px] px-4 py-2 text-left font-medium">
-              {t(() => m.audit_col_pages())}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={props.rows}>
-            {(row) => (
-              <tr class="border-b border-hairline last:border-0">
-                <td class="px-4 py-2 font-mono">{row.kind}</td>
-                <td class="px-4 py-2">
-                  <Badge variant={severityVariant(row.severity)}>{row.severity}</Badge>
-                </td>
-                <td class="px-4 py-2">
-                  <span>{row.message}</span>
-                  <Show when={row.detail}>
-                    {(detail) => (
-                      <span class="mt-1 block text-xs text-muted-foreground">{detail()}</span>
-                    )}
-                  </Show>
-                </td>
-                <td class="px-4 py-2 font-mono text-xs">
-                  {row.pages.length > 0 ? row.pages.join(", ") : DASH}
-                </td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
+    <DataGrid
+      empty={props.empty}
+      items={props.rows}
+      columns={[
+        { id: "kind", label: t(() => m.audit_col_kind()), class: "w-[120px] font-mono", search: (row) => row.message, sortValue: (row) => row.kind, cell: (row) => row.kind },
+        { id: "severity", label: t(() => m.audit_col_severity()), class: "w-[110px]", filter: { label: t(() => m.audit_col_severity()), value: (row) => row.severity }, sortValue: (row) => row.severity, cell: (row) => <Badge variant={severityVariant(row.severity)}>{row.severity}</Badge> },
+        { id: "message", label: t(() => m.audit_col_message()), class: "min-w-[200px]", cell: (row) => (<><span>{row.message}</span><Show when={row.detail}>{(detail) => <span class="mt-1 block text-xs text-muted-foreground">{detail()}</span>}</Show></>) },
+        { id: "pages", label: t(() => m.audit_col_pages()), class: "w-[220px] font-mono text-xs", cell: (row) => (row.pages.length > 0 ? row.pages.join(", ") : DASH) },
+      ]}
+    />
   );
 }
 
@@ -515,7 +444,7 @@ function ErrorBlock(props: { message: string; onRetry: () => void }) {
     >
       <strong class="text-sm">{t(() => m.state_error_title())}</strong>
       <span class="max-w-md text-sm text-muted-foreground">{props.message}</span>
-      <Button size="sm" type="button" onClick={props.onRetry}>
+      <Button type="button" onClick={props.onRetry}>
         {t(() => m.state_retry())}
       </Button>
     </div>

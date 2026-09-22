@@ -1,13 +1,15 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Input } from "~/components/input";
 import { kindCounts } from "~/components/overview";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState, KindBadge } from "~/components/ui-bits";
+import { KindBadge } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminPendingWrites } from "~/lib/admin-api";
 import { ApiError, listPages } from "~/lib/api";
 import { isAdminTier, tier } from "~/lib/auth";
@@ -88,114 +90,88 @@ export function ScopeWikiScreen(props: { project: string; workspace: string }) {
         <div class="flex flex-col items-start gap-2 text-sm" role="alert">
           <strong>{t(() => m.state_error_title())}</strong>
           <span class="text-destructive">{errorText(pages$.error)}</span>
-          <Button size="sm" type="button" variant="outline" onClick={() => void pages$.refetch()}>
+          <Button type="button" variant="outline" onClick={() => void pages$.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
       </Show>
 
       <Show when={!pages$.isPending && !pages$.isError}>
-        <Show
-          fallback={<EmptyState body={t(() => m.wiki_empty_body())} title={t(() => m.state_empty_title())} />}
-          when={(pages$.data?.length ?? 0) > 0}
-        >
           <div class="flex flex-col gap-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <Input
-                class="h-8 max-w-xs"
-                placeholder={t(() => m.wiki_filter_placeholder())}
-                value={query()}
-                onInput={(event) => setQuery(event.currentTarget.value)}
-              />
-              <select
-                class="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={kind()}
-                onChange={(event) => setKind(event.currentTarget.value)}
-              >
-                <option value={KIND_ALL}>{t(() => m.wiki_filter_kind_all())}</option>
-                <For each={kinds()}>
-                  {(item) => (
-                    <option value={item.kind}>
-                      {item.kind} ({item.count})
-                    </option>
-                  )}
-                </For>
-              </select>
-            </div>
-
             <p class="text-xs text-muted-foreground">{t(() => m.wiki_note_history())}</p>
-
-            <Show
-              fallback={
-                <EmptyState
-                  body={t(() => m.tree_filter_empty_body())}
-                  title={t(() => m.tree_filter_empty_title())}
-                />
-              }
-              when={filtered().length > 0}
-            >
-              <WikiTable pages={filtered()} scope={scope()} />
-            </Show>
+            <WikiTable empty={t(() => m.wiki_empty_body())} pages={pages$.data ?? []} scope={scope()} />
           </div>
-        </Show>
       </Show>
     </Shell>
   );
 }
 
-function WikiTable(props: { pages: PageSummary[]; scope: { project: string; workspace: string } }) {
+function WikiTable(props: {
+  empty: string;
+  pages: PageSummary[];
+  scope: { project: string; workspace: string };
+}) {
   return (
-    <div class="overflow-x-auto rounded-lg border border-hairline">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-hairline text-left text-xs text-muted-foreground">
-            <th class="w-56 px-2 py-1.5 font-medium">{t(() => m.wiki_col_path())}</th>
-            <th class="min-w-0 px-2 py-1.5 font-medium">{t(() => m.wiki_col_title())}</th>
-            <th class="w-24 px-2 py-1.5 font-medium">{t(() => m.wiki_col_kind())}</th>
-            <th class="w-28 px-2 py-1.5 font-medium">{t(() => m.wiki_col_tier())}</th>
-            <th class="w-32 px-2 py-1.5 font-medium">{t(() => m.wiki_col_updated())}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={props.pages}>
-            {(page) => {
-              const params = {
-                _splat: page.path,
-                project: props.scope.project,
-                workspace: props.scope.workspace,
-              };
-              return (
-                <tr class="border-b border-hairline last:border-0 hover:bg-active-item">
-                  <td class="px-2 py-1.5">
-                    <Link
-                      class="block truncate font-mono text-xs text-foreground hover:text-primary"
-                      to="/s/$workspace/$project/pages/$"
-                      params={params}
-                    >
-                      {page.path}
-                    </Link>
-                  </td>
-                  <td class="min-w-0 px-2 py-1.5">
-                    <Link
-                      class="block truncate hover:text-primary"
-                      to="/s/$workspace/$project/pages/$"
-                      params={params}
-                    >
-                      {page.title}
-                    </Link>
-                  </td>
-                  <td class="px-2 py-1.5">
-                    <KindBadge kind={page.kind} />
-                  </td>
-                  <td class="px-2 py-1.5 text-muted-foreground">{page.tier}</td>
-                  <td class="px-2 py-1.5 text-muted-foreground">{formatDateShort(page.updated_at)}</td>
-                </tr>
-              );
-            }}
-          </For>
-        </tbody>
-      </table>
-    </div>
+    <DataGrid
+      empty={props.empty}
+      items={props.pages}
+      tableClass="table-fixed"
+      columns={[
+        {
+          id: "path",
+          label: t(() => m.wiki_col_path()),
+          class: "w-56",
+          search: (page) => `${page.path} ${page.title}`,
+          sortValue: (page) => page.path,
+          cell: (page) => (
+            <Link
+              class="block truncate font-mono text-xs text-foreground hover:text-primary"
+              to="/s/$workspace/$project/pages/$"
+              params={{ _splat: page.path, project: props.scope.project, workspace: props.scope.workspace }}
+            >
+              {page.path}
+            </Link>
+          ),
+        },
+        {
+          id: "title",
+          label: t(() => m.wiki_col_title()),
+          class: "min-w-0",
+          sortValue: (page) => page.title,
+          cell: (page) => (
+            <Link
+              class="block truncate hover:text-primary"
+              to="/s/$workspace/$project/pages/$"
+              params={{ _splat: page.path, project: props.scope.project, workspace: props.scope.workspace }}
+            >
+              {page.title}
+            </Link>
+          ),
+        },
+        {
+          id: "kind",
+          label: t(() => m.wiki_col_kind()),
+          class: "w-24",
+          filter: { label: t(() => m.wiki_col_kind()), value: (page) => page.kind },
+          sortValue: (page) => page.kind,
+          cell: (page) => <KindBadge kind={page.kind} />,
+        },
+        {
+          id: "tier",
+          label: t(() => m.wiki_col_tier()),
+          class: "w-28 text-muted-foreground",
+          sortValue: (page) => page.tier,
+          cell: (page) => page.tier,
+        },
+        {
+          id: "updated",
+          label: t(() => m.wiki_col_updated()),
+          class: "w-32 text-muted-foreground",
+          sortValue: (page) => page.updated_at,
+          cell: (page) => formatDateShort(page.updated_at),
+        },
+      ]}
+    />
   );
 }
 

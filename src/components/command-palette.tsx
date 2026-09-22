@@ -1,4 +1,4 @@
-import * as PopoverPrimitive from "@kobalte/core/popover";
+import * as PopoverPrimitive from "~/components/popover";
 import {
   Box,
   Boxes,
@@ -9,14 +9,16 @@ import {
   Loader2,
   Search,
   X,
-} from "lucide-solid";
+} from "~/components/icons";
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js";
 
 import { KindBadge } from "~/components/ui-bits";
+import { ScrollArea } from "~/components/scroll-area";
 import { HighlightMatch } from "~/components/workspace-cascader";
 import { t } from "~/lib/i18n";
 import type { SearchHit, WorkspaceWithProjects } from "~/lib/types";
 import * as m from "~/paraglide/messages";
+import { cn } from "~/lib/utils";
 
 // Explicit search scope chosen via the cascader.
 export type SearchTarget =
@@ -41,21 +43,23 @@ export function CommandPalette(props: {
   let resultsRef: HTMLDivElement | undefined;
   const [active, setActive] = createSignal(0);
 
-  createEffect(() => {
-    if (props.open) {
-      queueMicrotask(() => inputRef?.focus());
-    }
-  });
+  createEffect(
+    () => props.open,
+    (open) => {
+      if (open) queueMicrotask(() => inputRef?.focus());
+    },
+  );
   // Resultados mudaram → reseta o cursor para o topo.
-  createEffect(() => {
-    props.results;
-    setActive(0);
-  });
+  createEffect(
+    () => props.results,
+    () => {
+      setActive(0);
+    },
+  );
   // Cursor ativo mudou (teclado ↓/↑ ou hover) → garante que o item visado
   // fique visível. Sem isso, a navegação por teclado podia "selecionar" itens
   // fora do viewport e o usuário não via o highlight se mover.
-  createEffect(() => {
-    const idx = active();
+  createEffect(active, (idx) => {
     const container = resultsRef;
     if (!container || idx < 0) return;
     const item = container.children[idx] as HTMLElement | undefined;
@@ -82,12 +86,12 @@ export function CommandPalette(props: {
   return (
     <Show when={props.open}>
       <div
-        class="fixed inset-0 z-50 flex items-start justify-center bg-foreground/20 p-4 pt-[14vh] backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[14vh] backdrop-blur-sm"
         data-testid="command-palette"
         onClick={props.onClose}
       >
         <div
-          class="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-2xl"
+          class="flex max-h-[70vh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-2xl"
           onClick={(event) => event.stopPropagation()}
         >
           <div class="flex items-center gap-2 border-b px-3 py-2.5">
@@ -121,7 +125,8 @@ export function CommandPalette(props: {
               esc
             </kbd>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-2">
+          <ScrollArea fill class="min-h-0 flex-1">
+          <div class="p-2">
             <Switch>
               <Match when={props.submitted.length === 0}>
                 <PaletteHint body={t(() => m.palette_ready_body())} title={t(() => m.palette_ready_title())} />
@@ -143,11 +148,10 @@ export function CommandPalette(props: {
                   <For each={props.results}>
                     {(hit, index) => (
                       <button
-                        class="flex w-full min-w-0 flex-col gap-1 rounded-lg p-3 text-left outline-none transition"
-                        classList={{
-                          "bg-selected": index() === active(),
-                          "hover:bg-hover": index() !== active(),
-                        }}
+                        class={cn(
+                          "flex w-full min-w-0 flex-col gap-1 rounded-lg p-3 text-left outline-none transition",
+                          index() === active() ? "bg-selected" : "hover:bg-hover",
+                        )}
                         type="button"
                         onClick={() => props.onSelect(hit)}
                         onMouseEnter={() => setActive(index())}
@@ -176,6 +180,7 @@ export function CommandPalette(props: {
               </Match>
             </Switch>
           </div>
+          </ScrollArea>
           <div class="flex items-center gap-3 border-t px-4 py-2 text-[0.7rem] text-muted-foreground">
             <span>↑↓ {t(() => m.palette_nav())}</span>
             <span class="flex items-center gap-1">
@@ -240,7 +245,6 @@ export function SearchScopeCascader(props: {
   return (
     <PopoverPrimitive.Root open={open()} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger
-        as="button"
         aria-label="Escopo da busca"
         class="flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 text-xs font-medium outline-none transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
         type="button"
@@ -261,8 +265,10 @@ export function SearchScopeCascader(props: {
         >
           {/* Global row — always available on top */}
           <button
-            class="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-            classList={{ "bg-selected text-primary": props.target.kind === "global" }}
+            class={cn(
+              "flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
+              props.target.kind === "global" && "bg-selected text-primary",
+            )}
             type="button"
             onClick={() => pick({ kind: "global" })}
           >
@@ -272,18 +278,16 @@ export function SearchScopeCascader(props: {
           </button>
           <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] divide-x">
             {/* Left: workspaces (click = workspace-wide search) */}
-            <div class="max-h-72 overflow-y-auto p-1">
+            <ScrollArea class="max-h-72 p-1">
               <For each={props.workspaces}>
                 {(ws) => (
                   <button
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                    classList={{
-                      "bg-selected text-primary":
-                        props.target.kind === "workspace" && props.target.workspace === ws.workspace_name,
-                      "bg-hover": activeWorkspace() === ws.workspace_name && !(
-                        props.target.kind === "workspace" && props.target.workspace === ws.workspace_name
-                      ),
-                    }}
+                    class={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
+                      props.target.kind === "workspace" && props.target.workspace === ws.workspace_name
+                        ? "bg-selected text-primary"
+                        : activeWorkspace() === ws.workspace_name && "bg-hover",
+                    )}
                     type="button"
                     onMouseEnter={() => setHoveredWs(ws.workspace_name)}
                     onClick={() => pick({ kind: "workspace", workspace: ws.workspace_name })}
@@ -301,9 +305,9 @@ export function SearchScopeCascader(props: {
                   </button>
                 )}
               </For>
-            </div>
+            </ScrollArea>
             {/* Right: projects of the active workspace */}
-            <div class="max-h-72 overflow-y-auto p-1">
+            <ScrollArea class="max-h-72 p-1">
               <Show
                 fallback={
                   <p class="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -315,13 +319,13 @@ export function SearchScopeCascader(props: {
                 <For each={activeProjects()}>
                   {(project) => (
                     <button
-                      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover"
-                      classList={{
-                        "bg-selected text-primary":
-                          props.target.kind === "project" &&
+                      class={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition hover:bg-hover focus-visible:bg-hover",
+                        props.target.kind === "project" &&
                           props.target.workspace === project.workspace_name &&
-                          props.target.project === project.project_name,
-                      }}
+                          props.target.project === project.project_name &&
+                          "bg-selected text-primary",
+                      )}
                       type="button"
                       onClick={() => pick({ kind: "project", workspace: project.workspace_name, project: project.project_name })}
                     >
@@ -336,7 +340,7 @@ export function SearchScopeCascader(props: {
                   )}
                 </For>
               </Show>
-            </div>
+            </ScrollArea>
           </div>
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

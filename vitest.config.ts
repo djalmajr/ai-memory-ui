@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import solid from "vite-plugin-solid";
+import solid from "@solidjs/vite-plugin";
 import { defineConfig } from "vitest/config";
 
 // Config dedicada aos testes unitários (lib/* puros + componentes Solid).

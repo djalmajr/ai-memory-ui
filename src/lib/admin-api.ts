@@ -157,7 +157,7 @@ export function adminAuditContamination(scope?: ScopeArgs): Promise<Contaminatio
   return adminRequest<ContaminationReport>(`/audit-contamination${query({ ...scope })}`);
 }
 
-/** Não existe em engines anteriores ao PR do leitor: 404 => `null`. */
+/** Existe no engine atual. 404 (engine sem o leitor) => `null`. */
 export function adminAuditLog(params: {
   workspace?: string;
   project?: string;
@@ -170,8 +170,7 @@ export function adminAuditLog(params: {
   );
 }
 
-/** `detail` é sempre `"{}"` hoje: a única inserção de `audit_log` grava
- *  literal. Exposto por fidelidade ao schema, não como payload útil. */
+/** `detail` é string. O writer guarda o literal `"{}"`; não é payload. */
 export interface AuditEvent {
   id: number;
   at: number;
@@ -424,4 +423,134 @@ export function adminMoveProject(input: {
   on_conflict?: "block" | "overwrite" | "duplicate";
 }): Promise<unknown> {
   return adminRequest<unknown>("/move-project", json({ ...input, confirm: true }));
+}
+
+export interface CompactReport {
+  bytes_before: number;
+  bytes_after: number;
+  bytes_reclaimed: number;
+}
+
+/** Lock exclusivo + VACUUM. `confirm` é obrigatório no engine. */
+export function adminCompact(): Promise<CompactReport> {
+  return adminRequest<CompactReport>("/compact", json({ confirm: true }));
+}
+
+/** `POST /admin/export-okf?workspace&project` — tarball gzip. */
+export async function adminExportOkf(scope: ScopeArgs): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(
+    `${BASE_PATH}/admin/export-okf${query({ project: scope.project, workspace: scope.workspace })}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: csrfHeaders(),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorMessage(response));
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  return { blob: await response.blob(), filename: match?.[1] ?? "okf-bundle.tar.gz" };
+}
+
+export function adminExpireHandoffs(scope: ScopeArgs): Promise<{ expired: number }> {
+  return adminRequest<{ expired: number }>("/handoffs/expire", json({ ...scope, confirm: true }));
+}
+
+export function adminPurgeSession(scope: ScopeArgs, sessionId: string): Promise<unknown> {
+  return adminRequest<unknown>(
+    "/purge-session",
+    json({ ...scope, session_id: sessionId, confirm: true }),
+  );
+}
+
+/** Sem `confirm` o engine devolve dry-run (`dry_run: true`) e não escreve. */
+export function adminMoveSession(input: {
+  session_id: string;
+  project: string;
+  workspace?: string;
+  confirm: boolean;
+}): Promise<unknown> {
+  return adminRequest<unknown>("/move-session", json(input));
+}
+
+export function adminExpireUser(username: string): Promise<AdminUser> {
+  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/expire`, {
+    method: "POST",
+  }).then((r) => r.user);
+}
+
+export function adminReviveUser(username: string): Promise<AdminUser> {
+  return adminRequest<{ user: AdminUser }>(`/users/${encodeURIComponent(username)}/revive`, {
+    method: "POST",
+  }).then((r) => r.user);
+}
+
+export function adminWritePage(input: {
+  workspace: string;
+  project: string;
+  path: string;
+  body: string;
+  title?: string;
+  kind?: string;
+  tier?: string;
+  tags?: string[];
+  pinned?: boolean;
+}): Promise<{ page_id: string; path: string }> {
+  return adminRequest<{ page_id: string; path: string }>("/write-page", json(input));
+}
+
+export function adminDeletePage(
+  scope: ScopeArgs,
+  path: string,
+): Promise<{ deleted: boolean; path: string }> {
+  return adminRequest<{ deleted: boolean; path: string }>("/delete-page", json({ ...scope, path }));
+}
+
+export interface AgentMessageView {
+  id: string;
+  subject: string | null;
+  body: string;
+  state: "pending" | "claimed" | "cancelled";
+  created_at: string;
+  from_agent: string;
+  from_owner_user: string | null;
+  from_workspace_id: string;
+  from_project_id: string;
+}
+
+export function adminMessages(
+  scope: ScopeArgs,
+  box: "inbox" | "outbox",
+  limit = 50,
+): Promise<AgentMessageView[]> {
+  return adminRequest<{ messages: AgentMessageView[] }>(
+    `/messages${query({ box, limit, project: scope.project, workspace: scope.workspace })}`,
+  ).then((r) => r.messages);
+}
+
+export function adminSendMessage(input: {
+  from_workspace: string;
+  from_project: string;
+  to_workspace: string;
+  to_project: string;
+  subject?: string;
+  body: string;
+}): Promise<{ message_id: string }> {
+  return adminRequest<{ message_id: string }>("/messages/send", json(input));
+}
+
+export function adminPopMessage(
+  scope: ScopeArgs,
+  messageId?: string,
+): Promise<{ message: AgentMessageView | null; security_notice?: string }> {
+  return adminRequest("/messages/pop", json({ ...scope, message_id: messageId }));
+}
+
+export function adminCancelMessage(
+  scope: ScopeArgs,
+  messageId?: string,
+): Promise<{ cancelled: number }> {
+  return adminRequest("/messages/cancel", json({ ...scope, message_id: messageId }));
 }

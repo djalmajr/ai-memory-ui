@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/solid-router";
-import { useQuery } from "@tanstack/solid-query";
-import { ShieldCheck } from "lucide-solid";
+import { useQuery } from "~/lib/query";
+import { ShieldCheck } from "~/components/icons";
 import { Show } from "solid-js";
 
 import { Button } from "~/components/button";
@@ -86,7 +86,7 @@ export function ScopeOverviewScreen(props: { project: string; workspace: string 
         <div class="flex flex-col items-start gap-2 text-sm" role="alert">
           <strong>{t(() => m.state_error_title())}</strong>
           <span class="text-destructive">{errorText(error())}</span>
-          <Button size="sm" type="button" variant="outline" onClick={refetchAll}>
+          <Button type="button" variant="outline" onClick={refetchAll}>
             {t(() => m.state_retry())}
           </Button>
         </div>

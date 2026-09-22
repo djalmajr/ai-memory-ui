@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { For, Show, type JSX } from "solid-js";
+import { For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 import { Button } from "~/components/button";
 import { Shell } from "~/components/shell";
@@ -23,13 +24,14 @@ import type {
 import { ApiError } from "~/lib/api";
 import { formatRelative, fromUnixSeconds } from "~/lib/datetime";
 import { t, useLocale } from "~/lib/i18n";
+import { formatBytes } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
 
 // Layout segue o protótipo Paper "Visão geral · Padrão" (J3B-0): stat strip,
-// "Requer atenção" e "Atividade por cliente". Células que o protótipo previa
-// mas o engine não expõe foram substituídas por dados reais: não há endpoint
-// de uso de disco e o inventário de chaves vive no mcp-auth (`/keys`), então
-// as células viram Páginas e Observações vindas de `/admin/status`.
+// "Requer atenção" e "Atividade por cliente". Páginas e observações vêm de
+// `counts`. Disco, tamanho do banco e bytes recuperáveis vêm de `storage`
+// (`data_dir_free_bytes` pode ser null). Chaves `amk_` continuam no sidecar
+// mcp-auth — esta tela não inventa essa célula.
 
 interface AttentionRow {
   pending: number;
@@ -123,6 +125,56 @@ function providersSummary(providers: ProviderHealthSnapshot): { sub: string; val
   return { sub: models.length > 0 ? models.join(" · ") : "—", value };
 }
 
+function StatStripSkeleton(props: { cells: number }) {
+  return (
+    <div class="flex w-full rounded-lg border border-hairline max-md:flex-col">
+      <For each={Array.from({ length: props.cells }, (_, index) => index)}>
+        {() => (
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5 border-hairline p-4 not-last:border-r max-md:not-last:border-r-0 max-md:not-last:border-b">
+            <Skeleton class="h-3 w-16" />
+            <Skeleton class="h-[22px] w-20" />
+            <Skeleton class="h-3 w-28" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function AttentionSkeleton() {
+  return (
+    <div class="flex flex-col rounded-lg border border-hairline">
+      <For each={[0, 1]}>
+        {() => (
+          <div class="flex items-center gap-2.5 border-hairline px-3.5 py-2.5 not-last:border-b">
+            <Skeleton class="size-2 shrink-0 rounded-full" />
+            <Skeleton class="h-3.5 min-w-0 flex-1" />
+            <Skeleton class="h-3 w-24" />
+            <Skeleton class="h-3.5 w-14" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function ActivitySkeleton() {
+  return (
+    <div class="flex flex-col rounded-lg border border-hairline">
+      <For each={[0, 1, 2]}>
+        {() => (
+          <div class="flex items-center gap-3 border-hairline px-3.5 py-2.5 not-last:border-b">
+            <Skeleton class="h-3 w-28 shrink-0" />
+            <Skeleton class="h-1.5 min-w-0 flex-1 rounded-full" />
+            <Skeleton class="h-3 w-8 shrink-0" />
+            <Skeleton class="h-3 w-36 shrink-0" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
 function QueryBlock(props: {
   children: JSX.Element;
   empty: boolean;
@@ -131,23 +183,16 @@ function QueryBlock(props: {
   isError: boolean;
   isPending: boolean;
   onRetry: () => void;
+  pending: JSX.Element;
 }) {
   return (
-    <Show
-      fallback={
-        <div class="flex flex-col gap-3">
-          <Skeleton class="h-4 w-1/3 rounded-md" />
-          <Skeleton class="h-16 w-full rounded-md" />
-        </div>
-      }
-      when={!props.isPending}
-    >
+    <Show fallback={props.pending} when={!props.isPending}>
       <Show
         fallback={
           <div class="flex flex-col items-start gap-2" role="alert">
             <strong class="text-sm">{t(() => m.state_error_title())}</strong>
             <p class="text-sm text-destructive">{errorText(props.error)}</p>
-            <Button onClick={() => props.onRetry()} size="sm" type="button" variant="outline">
+            <Button onClick={() => props.onRetry()} type="button" variant="outline">
               {t(() => m.state_retry())}
             </Button>
           </div>
@@ -217,6 +262,12 @@ export function ServerOverviewScreen() {
           isError={statusQ.isError}
           isPending={statusQ.isPending}
           onRetry={() => void statusQ.refetch()}
+          pending={
+            <div class="flex flex-col gap-1.5">
+              <StatStripSkeleton cells={4} />
+              <StatStripSkeleton cells={3} />
+            </div>
+          }
         >
           <Show when={statusQ.data}>
             {(status) => (
@@ -245,6 +296,31 @@ export function ServerOverviewScreen() {
               </div>
             )}
           </Show>
+          <Show when={statusQ.data?.storage}>
+            {(storage) => (
+              <div class="mt-1.5 flex w-full rounded-lg border border-hairline max-md:flex-col">
+                <StatCell
+                  label={t(() => m.overview_disk_free())}
+                  sub={
+                    storage().data_dir_free_bytes === null
+                      ? t(() => m.overview_disk_unknown())
+                      : t(() => m.overview_disk_sub())
+                  }
+                  value={formatBytes(storage().data_dir_free_bytes)}
+                />
+                <StatCell
+                  label={t(() => m.overview_database())}
+                  sub={t(() => m.overview_database_sub())}
+                  value={formatBytes(storage().database_bytes)}
+                />
+                <StatCell
+                  label={t(() => m.overview_reclaimable())}
+                  sub={t(() => m.overview_reclaimable_sub())}
+                  value={formatBytes(storage().reclaimable_bytes)}
+                />
+              </div>
+            )}
+          </Show>
         </QueryBlock>
       </section>
 
@@ -257,6 +333,7 @@ export function ServerOverviewScreen() {
           isError={attentionQ.isError}
           isPending={attentionQ.isPending}
           onRetry={() => void attentionQ.refetch()}
+          pending={<AttentionSkeleton />}
         >
           <div class="flex flex-col rounded-lg border border-hairline">
             <For each={attentionQ.data}>
@@ -292,6 +369,7 @@ export function ServerOverviewScreen() {
           isError={activityQ.isError}
           isPending={activityQ.isPending}
           onRetry={() => void activityQ.refetch()}
+          pending={<ActivitySkeleton />}
         >
           <div class="flex flex-col rounded-lg border border-hairline">
             <For each={activityQ.data}>

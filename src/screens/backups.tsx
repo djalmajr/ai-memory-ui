@@ -1,10 +1,13 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { CircleHelp } from "~/components/icons";
+import { DataGrid } from "~/components/data-grid";
+import { ScrollArea } from "~/components/scroll-area";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminBackup, adminCheckpoints } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
 import { canMutate, tier } from "~/lib/auth";
@@ -19,6 +22,38 @@ function failMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function BackupsHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "backups-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.backups_help())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>{t(() => m.backups_git_note())}</p>
+        <p>{t(() => m.backups_lifecycle())}</p>
+      </div>
+    </div>
+  );
 }
 
 function saveBlob(blob: Blob, filename: string): void {
@@ -43,6 +78,8 @@ export function BackupsScreen() {
   const [downloadedAs, setDownloadedAs] = createSignal<string | null>(null);
   const [restoreOpen, setRestoreOpen] = createSignal(false);
 
+  const items = () => q.data ?? [];
+
   const download = async () => {
     setDownloading(true);
     setDownloadError(null);
@@ -57,29 +94,12 @@ export function BackupsScreen() {
     }
   };
 
-  const items = () => q.data ?? [];
-
   return (
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_backups())}</span>}
-      actions={
-        <div class="flex items-center gap-2">
-          <Button
-            disabled={downloading() || !canMutate(tier())}
-            size="sm"
-            type="button"
-            onClick={() => void download()}
-          >
-            {downloading() ? t(() => m.backups_downloading()) : t(() => m.backups_download())}
-          </Button>
-          <Button size="sm" type="button" variant="outline" onClick={() => setRestoreOpen(true)}>
-            {t(() => m.backups_restore())}
-          </Button>
-        </div>
-      }
+      description={<span>{t(() => m.backups_subtitle())}</span>}
     >
-      <p class="text-xs text-muted-foreground">{t(() => m.backups_subtitle())}</p>
       <Show when={downloadError()}>
         {(message) => (
           <p class="text-sm text-destructive" role="alert">
@@ -105,52 +125,60 @@ export function BackupsScreen() {
         <div class="flex flex-col items-start gap-2" role="alert">
           <p class="text-sm font-medium">{t(() => m.state_error_title())}</p>
           <p class="text-sm text-destructive">{failMessage(q.error)}</p>
-          <Button size="sm" type="button" variant="outline" onClick={() => void q.refetch()}>
+          <Button type="button" variant="outline" onClick={() => void q.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
       </Show>
       <Show when={!q.isPending && !q.isError}>
-        <div class="flex flex-col gap-4">
-          <p class="text-xs text-muted-foreground">{t(() => m.backups_git_note())}</p>
-          <Show
-            when={items().length === 0}
-            fallback={
-              <div class="overflow-x-auto rounded-lg border border-hairline">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="border-b border-hairline text-left text-xs text-muted-foreground">
-                      <th class="w-28 px-3 py-2 font-medium">{t(() => m.backups_col_oid())}</th>
-                      <th class="px-3 py-2 font-medium">{t(() => m.backups_col_summary())}</th>
-                      <th class="w-40 px-3 py-2 font-medium">{t(() => m.backups_col_time())}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={items()}>
-                      {(row) => (
-                        <tr class="border-b border-hairline last:border-0">
-                          <td class="px-3 py-2 font-mono text-xs">{row.short_oid}</td>
-                          <td class="px-3 py-2">{row.summary}</td>
-                          <td class="px-3 py-2 text-muted-foreground">
-                            {formatDateTime(fromUnixSeconds(row.time))}
-                          </td>
-                        </tr>
-                      )}
-                    </For>
-                  </tbody>
-                </table>
-              </div>
+          <DataGrid
+            beforeSort={<BackupsHelp />}
+            action={
+              <>
+                <Button type="button" variant="outline" onClick={() => setRestoreOpen(true)}>
+                  {t(() => m.backups_restore())}
+                </Button>
+                <Button
+                  disabled={downloading() || !canMutate(tier())}
+                  type="button"
+                  onClick={() => void download()}
+                >
+                  {downloading() ? t(() => m.backups_downloading()) : t(() => m.backups_download())}
+                </Button>
+              </>
             }
-          >
-            <EmptyState body={t(() => m.backups_empty_body())} title={t(() => m.state_empty_title())} />
-          </Show>
-          <p class="text-sm text-muted-foreground">{t(() => m.backups_lifecycle())}</p>
-        </div>
+            empty={t(() => m.backups_empty_body())}
+            items={items()}
+            columns={[
+              {
+                id: "oid",
+                label: t(() => m.backups_col_oid()),
+                class: "w-28 font-mono text-xs",
+                search: (row) => row.short_oid,
+                sortValue: (row) => row.short_oid,
+                cell: (row) => row.short_oid,
+              },
+              {
+                id: "summary",
+                label: t(() => m.backups_col_summary()),
+                search: (row) => row.summary,
+                sortValue: (row) => row.summary,
+                cell: (row) => row.summary,
+              },
+              {
+                id: "time",
+                label: t(() => m.backups_col_time()),
+                class: "w-40 text-muted-foreground",
+                sortValue: (row) => row.time,
+                cell: (row) => formatDateTime(fromUnixSeconds(row.time)),
+              },
+            ]}
+          />
       </Show>
 
       <Show when={restoreOpen()}>
         <div
-          class="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
           onClick={() => setRestoreOpen(false)}
         >
           <div
@@ -161,11 +189,11 @@ export function BackupsScreen() {
           >
             <h2 class="text-sm font-medium">{t(() => m.backups_restore_title())}</h2>
             <p class="text-sm text-muted-foreground">{t(() => m.backups_restore_body())}</p>
-            <pre class="overflow-x-auto rounded-md border border-hairline bg-sidebar-bg p-4 font-mono text-xs">
-              ai-memory restore
-            </pre>
+            <ScrollArea class="rounded-md border border-hairline bg-sidebar-bg">
+              <pre class="p-4 font-mono text-xs">ai-memory restore</pre>
+            </ScrollArea>
             <div class="flex justify-end">
-              <Button size="sm" type="button" variant="outline" onClick={() => setRestoreOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setRestoreOpen(false)}>
                 {t(() => m.backups_restore_close())}
               </Button>
             </div>

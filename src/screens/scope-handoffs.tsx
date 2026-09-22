@@ -1,14 +1,15 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { For, Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState } from "~/components/ui-bits";
-import { adminPendingWrites } from "~/lib/admin-api";
+import { TableCell, TableHead, TableRow } from "~/components/table";
+import { adminPendingWrites, adminExpireHandoffs } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
-import { isAdminTier, tier } from "~/lib/auth";
+import { canMutate, isAdminTier, tier } from "~/lib/auth";
 import { formatDateTime, fromRfc3339 } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import {
@@ -48,6 +49,25 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
   }));
 
   const rows = () => list$.data?.handoffs ?? [];
+  const [expireArmed, setExpireArmed] = createSignal(false);
+  const [expirePending, setExpirePending] = createSignal(false);
+  const [expireError, setExpireError] = createSignal<string | null>(null);
+  const [expiredCount, setExpiredCount] = createSignal<number | null>(null);
+
+  const expire = async () => {
+    setExpirePending(true);
+    setExpireError(null);
+    try {
+      const result = await adminExpireHandoffs(scope());
+      setExpiredCount(result.expired);
+      setExpireArmed(false);
+      await list$.refetch();
+    } catch (error) {
+      setExpireError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setExpirePending(false);
+    }
+  };
 
   return (
     <Shell
@@ -57,10 +77,9 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_handoffs())} />}
     >
       <div class="flex flex-wrap items-end gap-4">
-        <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label class="flex flex-col gap-1.5 text-sm font-medium">
           {t(() => m.handoffs_col_state())}
-          <select
-            class="h-8 rounded-md border border-hairline bg-content-bg px-2 text-sm text-foreground"
+          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
             value={state()}
             onChange={(event) => setState(event.currentTarget.value as HandoffState | "")}
           >
@@ -70,10 +89,9 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
             </For>
           </select>
         </label>
-        <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label class="flex flex-col gap-1.5 text-sm font-medium">
           {t(() => m.handoffs_limit())}
-          <select
-            class="h-8 rounded-md border border-hairline bg-content-bg px-2 text-sm text-foreground"
+          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
             value={String(limit())}
             onChange={(event) => setLimit(Number(event.currentTarget.value))}
           >
@@ -98,6 +116,38 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
         </Show>
       </div>
 
+      <Show when={canMutate(tier())}>
+        <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
+          <p class="text-sm">{t(() => m.handoffs_expire_desc())}</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <Show
+              when={expireArmed()}
+              fallback={
+                <Button type="button" variant="outline" onClick={() => setExpireArmed(true)}>
+                  {t(() => m.handoffs_expire())}
+                </Button>
+              }
+            >
+              <Button disabled={expirePending()} type="button" onClick={() => void expire()}>
+                {t(() => m.handoffs_expire_confirm())}
+              </Button>
+            </Show>
+            <Show when={expiredCount() !== null}>
+              <span class="text-sm text-muted-foreground">
+                {t(() => m.handoffs_expired_n({ n: expiredCount() ?? 0 }))}
+              </span>
+            </Show>
+          </div>
+          <Show when={expireError()}>
+            {(message) => (
+              <p class="text-sm text-destructive" role="alert">
+                {message()}
+              </p>
+            )}
+          </Show>
+        </section>
+      </Show>
+
       <Show when={list$.isPending}>
         <div class="flex flex-col gap-2">
           <Skeleton class="h-4 w-1/2 rounded-md" />
@@ -108,76 +158,73 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
         <QueryError error={list$.error} onRetry={() => void list$.refetch()} />
       </Show>
       <Show when={!list$.isPending && !list$.isError}>
-        <Show
-          when={rows().length > 0}
-          fallback={
-            <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.handoffs_empty())} />
-          }
-        >
-          <div class="overflow-x-auto rounded-lg border border-hairline">
-            <table class="w-full table-fixed text-sm">
-              <thead>
-                <tr class="border-b border-hairline text-left text-xs text-muted-foreground">
-                  <th class="w-28 px-3 py-2 font-medium">{t(() => m.handoffs_col_state())}</th>
-                  <th class="w-36 px-3 py-2 font-medium">{t(() => m.handoffs_col_agent())}</th>
-                  <th class="w-40 px-3 py-2 font-medium">{t(() => m.handoffs_col_created())}</th>
-                  <th class="px-3 py-2 font-medium">{t(() => m.handoffs_col_summary())}</th>
-                  <th class="w-48 px-3 py-2 font-medium">{t(() => m.handoffs_col_accepted())}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={rows()}>{(row) => <HandoffRow row={row} />}</For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
+        <DataGrid
+          empty={t(() => m.handoffs_empty())}
+          items={rows()}
+          tableClass="table-fixed"
+          columns={[
+            {
+              id: "state",
+              label: t(() => m.handoffs_col_state()),
+              class: "w-28",
+              filter: {
+                label: t(() => m.handoffs_col_state()),
+                value: (row) => row.state,
+              },
+              sortValue: (row) => row.state,
+              cell: (row) => <HandoffStateBadge state={row.state} />,
+            },
+            {
+              id: "agent",
+              label: t(() => m.handoffs_col_agent()),
+              class: "w-36",
+              search: (row) => `${row.agent} ${row.summary ?? ""}`,
+              sortValue: (row) => row.agent,
+              cell: (row) => (
+                <>
+                  <div>{row.agent}</div>
+                  <div class="truncate font-mono text-xs text-muted-foreground" title={row.owner ?? ""}>
+                    {labelIdentityKey(row.owner)}
+                  </div>
+                </>
+              ),
+            },
+            {
+              id: "created",
+              label: t(() => m.handoffs_col_created()),
+              class: "w-40 tabular-nums",
+              sortValue: (row) => row.at,
+              cell: (row) => formatDateTime(fromRfc3339(row.at)),
+            },
+            {
+              id: "summary",
+              label: t(() => m.handoffs_col_summary()),
+              sortValue: (row) => row.summary ?? "",
+              cell: (row) => (
+                <Show when={!row.redacted} fallback={<span class="text-xs text-muted-foreground">{t(() => m.handoffs_redacted())}</span>}>
+                  <span class="line-clamp-2">{row.summary ?? "—"}</span>
+                </Show>
+              ),
+            },
+            {
+              id: "accepted",
+              label: t(() => m.handoffs_col_accepted()),
+              class: "w-48 text-xs",
+              cell: (row) => (
+                <>
+                  <div class="font-mono" title={row.accepted_by ?? ""}>
+                    {labelIdentityKey(row.accepted_by)}
+                  </div>
+                  <div class="tabular-nums text-muted-foreground">
+                    {row.accepted_at ? formatDateTime(fromRfc3339(row.accepted_at)) : "—"}
+                  </div>
+                </>
+              ),
+            },
+          ]}
+        />
       </Show>
     </Shell>
-  );
-}
-
-function HandoffRow(props: { row: ApiHandoffEntry }) {
-  return (
-    <tr class="border-b border-hairline last:border-0">
-      <td class="px-3 py-2">
-        <HandoffStateBadge state={props.row.state} />
-      </td>
-      <td class="px-3 py-2">
-        <div>{props.row.agent}</div>
-        <div class="truncate font-mono text-xs text-muted-foreground" title={props.row.owner ?? ""}>
-          {labelIdentityKey(props.row.owner)}
-        </div>
-      </td>
-      <td class="px-3 py-2 tabular-nums">{formatDateTime(fromRfc3339(props.row.at))}</td>
-      <td class="px-3 py-2">
-        <Show
-          when={!props.row.redacted}
-          fallback={
-            <span class="text-xs text-muted-foreground">{t(() => m.handoffs_redacted())}</span>
-          }
-        >
-          <span class="line-clamp-2">{props.row.summary ?? "—"}</span>
-          <Show when={(props.row.open_questions ?? []).length > 0}>
-            <p class="mt-1 text-xs text-muted-foreground">
-              {(props.row.open_questions ?? []).join(" · ")}
-            </p>
-          </Show>
-          <Show when={(props.row.next_steps ?? []).length > 0}>
-            <p class="mt-1 text-xs text-muted-foreground">
-              {(props.row.next_steps ?? []).join(" · ")}
-            </p>
-          </Show>
-        </Show>
-      </td>
-      <td class="px-3 py-2 text-xs">
-        <div class="font-mono" title={props.row.accepted_by ?? ""}>
-          {labelIdentityKey(props.row.accepted_by)}
-        </div>
-        <div class="tabular-nums text-muted-foreground">
-          {props.row.accepted_at ? formatDateTime(fromRfc3339(props.row.accepted_at)) : "—"}
-        </div>
-      </td>
-    </tr>
   );
 }
 
@@ -219,7 +266,7 @@ function QueryError(props: { error: Error | null; onRetry: () => void }) {
   return (
     <div class="flex flex-col items-start gap-2" role="alert">
       <p class="text-sm text-destructive">{message()}</p>
-      <Button type="button" size="sm" variant="outline" onClick={props.onRetry}>
+      <Button type="button" variant="outline" onClick={props.onRetry}>
         {t(() => m.state_retry())}
       </Button>
     </div>

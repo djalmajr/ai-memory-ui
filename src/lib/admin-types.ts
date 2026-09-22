@@ -49,8 +49,28 @@ export interface ProviderHealthSnapshot {
   embedding: ProviderRoleHealthSnapshot;
 }
 
+/** Figuras físicas de `GET /admin/status` → `storage`. */
+export interface StorageStatus {
+  page_size: number;
+  page_count: number;
+  freelist_count: number;
+  database_bytes: number;
+  reclaimable_bytes: number;
+  /** `null` quando o filesystem não pôde ser lido. */
+  data_dir_free_bytes: number | null;
+}
+
+/** Recibo da migração OKF em `GET /admin/status` → `wiki_format`. */
+export interface WikiFormatStatus {
+  okf_migrated: boolean;
+  backup_archive: string | null;
+  backup_archive_bytes: number | null;
+}
+
 /** `GET /admin/status`. Única fonte observável de versão/bind/data_dir — o
- *  engine não expõe configuração efetiva nem identidade do chamador. */
+ *  engine não expõe configuração efetiva nem identidade do chamador.
+ *  `storage`, `write_queue` e `wiki_format` entram no engine 2.x; ausentes
+ *  num engine antigo, a tela omite o bloco. */
 export interface StatusReport {
   version: string;
   data_dir: string;
@@ -60,6 +80,10 @@ export interface StatusReport {
   derived: DerivedIndexStatus;
   providers: ProviderHealthSnapshot;
   ingest: Record<string, number>;
+  storage?: StorageStatus;
+  /** `(queued, capacity)` — tupla JSON. */
+  write_queue?: [number, number];
+  wiki_format?: WikiFormatStatus;
 }
 
 /** `GET /admin/projects` → `{ projects }`. */

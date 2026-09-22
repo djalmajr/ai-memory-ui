@@ -83,6 +83,9 @@ test("o gatilho de busca abre a paleta", async ({ page }) => {
 
 test("atalho de teclado abre a paleta de qualquer tela", async ({ page }) => {
   await page.goto(app("/access"));
+  // `goto` resolve no `load`, mas o Shell só monta depois do `beforeLoad` e do
+  // chunk da rota (code splitting): sob carga, um ⌘K antes disso é perdido.
+  await expect(page.getByRole("navigation", { name: /Primary navigation/i })).toBeVisible();
   // O listener é global (window); o foco precisa estar na página para o
   // Playwright entregar a tecla ao documento e não ao chrome do browser.
   await page.locator("body").click({ position: { x: 5, y: 5 } });

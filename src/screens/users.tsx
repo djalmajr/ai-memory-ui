@@ -1,17 +1,25 @@
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Show, createSignal, onSettled } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { Ban, Check, CircleHelp, Clock, Ellipsis, KeyRound, Pencil, RefreshCw } from "~/components/icons";
 import { Input } from "~/components/input";
+import { Content as PopoverContent, Portal as PopoverPortal, Root as PopoverRoot, Trigger as PopoverTrigger } from "~/components/popover";
+import { DataGrid } from "~/components/data-grid";
+import { Select } from "~/components/select";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminCreateUser,
   adminDisableUser,
   adminEnableUser,
+  adminExpireUser,
   adminResetUserPassword,
+  adminReviveUser,
   adminUpdateUser,
   adminUsers,
 } from "~/lib/admin-api";
@@ -28,6 +36,7 @@ type Dialog =
   | { kind: "edit"; user: AdminUser }
   | { kind: "reset-password"; user: AdminUser }
   | { kind: "disable"; user: AdminUser }
+  | { kind: "expire"; user: AdminUser }
   | { kind: "secret"; username: string; password: string };
 
 export function UsersScreen() {
@@ -37,7 +46,7 @@ export function UsersScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_users())}</span>}
-      actions={
+      description={
         <Show when={allowed()}>
           <span>{t(() => m.users_subtitle())}</span>
         </Show>
@@ -54,7 +63,6 @@ function Forbidden() {
   return (
     <div class="flex flex-col gap-4">
       <EmptyState title={t(() => m.users_forbidden_title())} body={t(() => m.users_forbidden_body())} />
-      <InfoCards />
     </div>
   );
 }
@@ -69,6 +77,86 @@ function isLastActiveRoot(user: AdminUser, users: AdminUser[]): boolean {
   return activeRoots.length <= 1;
 }
 
+function UserRowActions(props: {
+  busy: boolean;
+  disabled: boolean;
+  lastRoot: boolean;
+  onDisable: () => void;
+  onEdit: () => void;
+  onEnable: () => void;
+  onExpire: () => void;
+  onReset: () => void;
+  onRevive: () => void;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const close = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+  const itemClass =
+    "flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4";
+
+  return (
+    <div class="flex justify-end gap-1">
+      <Button
+        aria-label={t(() => m.users_action_edit())}
+        disabled={props.busy}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onClick={() => props.onEdit()}
+      >
+        <Pencil />
+      </Button>
+      <PopoverRoot gutter={4} open={open()} placement="bottom-end" onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-label={t(() => m.users_actions())}
+          class="inline-flex size-7 items-center justify-center rounded-lg hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          disabled={props.busy}
+        >
+          <Ellipsis />
+        </PopoverTrigger>
+        <PopoverPortal>
+          <PopoverContent class="w-48 gap-0.5 p-1" role="menu">
+            <button class={itemClass} type="button" onClick={() => close(props.onReset)}>
+              <KeyRound />
+              {t(() => m.users_action_reset_password())}
+            </button>
+            <button class={itemClass} type="button" onClick={() => close(props.onExpire)}>
+              <Clock />
+              {t(() => m.users_action_expire())}
+            </button>
+            <button class={itemClass} type="button" onClick={() => close(props.onRevive)}>
+              <RefreshCw />
+              {t(() => m.users_action_revive())}
+            </button>
+            <Show
+              when={!props.disabled}
+              fallback={
+                <button class={itemClass} type="button" onClick={() => close(props.onEnable)}>
+                  <Check />
+                  {t(() => m.users_action_enable())}
+                </button>
+              }
+            >
+              <button
+                class={cn(itemClass, "text-destructive hover:bg-destructive/10")}
+                disabled={props.lastRoot}
+                title={props.lastRoot ? t(() => m.users_last_root_protected()) : undefined}
+                type="button"
+                onClick={() => close(props.onDisable)}
+              >
+                <Ban />
+                {t(() => m.users_action_disable())}
+              </button>
+            </Show>
+          </PopoverContent>
+        </PopoverPortal>
+      </PopoverRoot>
+    </div>
+  );
+}
+
 function UsersBody() {
   const q = useQuery(() => ({
     queryKey: ["admin", "users"],
@@ -78,6 +166,8 @@ function UsersBody() {
   const [dialog, setDialog] = createSignal<Dialog | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [rowError, setRowError] = createSignal<string | null>(null);
+
+  const rows = () => q.data ?? [];
 
   const close = () => setDialog(null);
 
@@ -96,18 +186,6 @@ function UsersBody() {
 
   return (
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-end">
-        <Button
-          size="sm"
-          onClick={() => {
-            setRowError(null);
-            setDialog({ kind: "create" });
-          }}
-        >
-          {t(() => m.users_new())}
-        </Button>
-      </div>
-
       <Show when={rowError()}>
         {(message) => (
           <p class="text-xs text-destructive" role="alert">
@@ -131,117 +209,122 @@ function UsersBody() {
             title={t(() => m.state_error_title())}
             body={q.error instanceof ApiError ? q.error.message : t(() => m.state_error_title())}
           />
-          <Button size="sm" variant="outline" onClick={() => void q.refetch()}>
+          <Button variant="outline" onClick={() => void q.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
       </Show>
 
       <Show when={!q.isPending && !q.isError}>
-        <Show
-          when={(q.data ?? []).length > 0}
-          fallback={
-            <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.users_empty_body())} />
+        <DataGrid
+          action={
+            <Button
+              onClick={() => {
+                setRowError(null);
+                setDialog({ kind: "create" });
+              }}
+            >
+              {t(() => m.users_new())}
+            </Button>
           }
-        >
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-xs text-muted-foreground">
-                  <th class="w-[140px] px-2 py-1.5 font-medium">{t(() => m.users_col_username())}</th>
-                  <th class="w-[150px] px-2 py-1.5 font-medium">{t(() => m.users_col_name())}</th>
-                  <th class="w-[180px] px-2 py-1.5 font-medium">{t(() => m.users_col_email())}</th>
-                  <th class="w-[90px] px-2 py-1.5 font-medium">{t(() => m.users_col_role())}</th>
-                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.users_col_status())}</th>
-                  <th class="w-[130px] px-2 py-1.5 font-medium">{t(() => m.users_col_created())}</th>
-                  <th class="w-[120px] px-2 py-1.5 font-medium">{t(() => m.users_col_last_seen())}</th>
-                  <th class="w-[200px] px-2 py-1.5 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                <For each={q.data}>
-                  {(user) => {
-                    const isLastRoot = () => isLastActiveRoot(user, q.data ?? []);
-                    const isDisabled = () => user.disabled_at !== null;
-                    return (
-                      <tr class="border-t border-hairline">
-                        <td class="px-2 py-1.5 font-mono">{user.username}</td>
-                        <td class="px-2 py-1.5">{user.name ?? "—"}</td>
-                        <td class="px-2 py-1.5">{user.email ?? "—"}</td>
-                        <td class="px-2 py-1.5">
-                          <Badge variant={user.role === "root" ? "default" : "secondary"}>
-                            {user.role === "root" ? t(() => m.users_role_root()) : t(() => m.users_role_user())}
-                          </Badge>
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <StatusCell user={user} />
-                        </td>
-                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
-                          {formatDateTime(fromMicros(user.created_at))}
-                        </td>
-                        <td class="px-2 py-1.5 text-muted-foreground text-xs">
-                          {user.last_used_at !== null && user.last_used_at !== undefined
-                            ? formatRelative(fromMicros(user.last_used_at))
-                            : user.last_seen_at !== null && user.last_seen_at !== undefined
-                              ? formatRelative(fromMicros(user.last_seen_at))
-                              : "—"}
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <div class="flex flex-wrap justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              class="h-7 text-xs"
-                              disabled={busy() === user.username}
-                              onClick={() => setDialog({ kind: "edit", user })}
-                            >
-                              {t(() => m.users_action_edit())}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              class="h-7 text-xs"
-                              disabled={busy() === user.username}
-                              onClick={() => setDialog({ kind: "reset-password", user })}
-                            >
-                              {t(() => m.users_action_reset_password())}
-                            </Button>
-                            <Show when={!isDisabled()}>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 text-xs"
-                                disabled={busy() === user.username || isLastRoot()}
-                                title={isLastRoot() ? t(() => m.users_last_root_protected()) : undefined}
-                                onClick={() => setDialog({ kind: "disable", user })}
-                              >
-                                {t(() => m.users_action_disable())}
-                              </Button>
-                            </Show>
-                            <Show when={isDisabled()}>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                class="h-7 text-xs text-primary"
-                                disabled={busy() === user.username}
-                                onClick={() => void enable(user)}
-                              >
-                                {t(() => m.users_action_enable())}
-                              </Button>
-                            </Show>
-                          </div>
-                        </td>
-                      </tr>
-                    );
+          beforeSort={<UsersHelp />}
+          empty={t(() => m.users_empty_body())}
+          items={rows()}
+          searchPlaceholder={t(() => m.users_col_username())}
+          columns={[
+            {
+              id: "username",
+              label: t(() => m.users_col_username()),
+              class: "w-[140px] font-mono",
+              search: (user) => `${user.username} ${user.name ?? ""} ${user.email ?? ""}`,
+              sortValue: (user) => user.username,
+              cell: (user) => user.username,
+            },
+            {
+              id: "name",
+              label: t(() => m.users_col_name()),
+              class: "w-[150px]",
+              sortValue: (user) => user.name ?? "",
+              cell: (user) => user.name ?? "—",
+            },
+            {
+              id: "email",
+              label: t(() => m.users_col_email()),
+              class: "w-[180px]",
+              sortValue: (user) => user.email ?? "",
+              cell: (user) => user.email ?? "—",
+            },
+            {
+              id: "role",
+              label: t(() => m.users_col_role()),
+              class: "w-[90px]",
+              sortValue: (user) => user.role,
+              filter: {
+                label: t(() => m.users_col_role()),
+                value: (user) => user.role,
+                options: [
+                  { label: t(() => m.users_role_user()), value: "user" },
+                  { label: t(() => m.users_role_root()), value: "root" },
+                ],
+              },
+              cell: (user) => (
+                <Badge variant={user.role === "root" ? "default" : "secondary"}>
+                  {user.role === "root" ? t(() => m.users_role_root()) : t(() => m.users_role_user())}
+                </Badge>
+              ),
+            },
+            {
+              id: "status",
+              label: t(() => m.users_col_status()),
+              class: "w-[120px]",
+              cell: (user) => <StatusCell user={user} />,
+            },
+            {
+              id: "created",
+              label: t(() => m.users_col_created()),
+              class: "w-[130px] text-xs text-muted-foreground",
+              sortValue: (user) => user.created_at,
+              cell: (user) => formatDateTime(fromMicros(user.created_at)),
+            },
+            {
+              id: "seen",
+              label: t(() => m.users_col_last_seen()),
+              class: "w-[120px] text-xs text-muted-foreground",
+              sortValue: (user) => user.last_used_at ?? user.last_seen_at ?? 0,
+              cell: (user) =>
+                user.last_used_at !== null && user.last_used_at !== undefined
+                  ? formatRelative(fromMicros(user.last_used_at))
+                  : user.last_seen_at !== null && user.last_seen_at !== undefined
+                    ? formatRelative(fromMicros(user.last_seen_at))
+                    : "—",
+            },
+            {
+              id: "actions",
+              label: t(() => m.users_actions()),
+              class: "w-24",
+              hideable: false,
+              cell: (user) => (
+                <UserRowActions
+                  busy={busy() === user.username}
+                  disabled={user.disabled_at !== null}
+                  lastRoot={isLastActiveRoot(user, rows())}
+                  onDisable={() => setDialog({ kind: "disable", user })}
+                  onEdit={() => setDialog({ kind: "edit", user })}
+                  onEnable={() => void enable(user)}
+                  onExpire={() => setDialog({ kind: "expire", user })}
+                  onReset={() => setDialog({ kind: "reset-password", user })}
+                  onRevive={() => {
+                    setBusy(user.username);
+                    void adminReviveUser(user.username)
+                      .then(() => q.refetch())
+                      .finally(() => setBusy(null));
                   }}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
+                />
+              ),
+            },
+          ]}
+        />
       </Show>
-
-      <InfoCards />
 
       <Show when={dialog()?.kind === "create"}>
         <CreateUserDialog
@@ -307,6 +390,33 @@ function UsersBody() {
                   } else {
                     close();
                   }
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            />
+          );
+        }}
+      </Show>
+
+      <Show when={dialog()?.kind === "expire" ? dialog() : null}>
+        {(current) => {
+          const d = current() as Extract<Dialog, { kind: "expire" }>;
+          return (
+            <ConfirmNameDialog
+              title={t(() => m.users_action_expire())}
+              body={t(() => m.users_confirm_expire_body({ name: d.user.username }))}
+              target={d.user.username}
+              confirmLabel={t(() => m.users_action_expire())}
+              destructive
+              pending={busy() === d.user.username}
+              onClose={close}
+              onConfirm={async () => {
+                setBusy(d.user.username);
+                try {
+                  await adminExpireUser(d.user.username);
+                  await q.refetch();
+                  close();
                 } finally {
                   setBusy(null);
                 }
@@ -388,16 +498,39 @@ function StatusCell(props: { user: AdminUser }) {
   );
 }
 
-function InfoCards() {
+function UsersHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "users-help";
   return (
-    <div class="grid gap-4 md:grid-cols-2">
-      <div class="flex flex-col gap-1 rounded-lg border border-hairline p-4">
-        <h2 class="text-sm font-medium">{t(() => m.users_lifecycle_title())}</h2>
-        <p class="text-xs text-muted-foreground">{t(() => m.users_lifecycle_body())}</p>
-      </div>
-      <div class="flex flex-col gap-1 rounded-lg border border-hairline p-4">
-        <h2 class="text-sm font-medium">{t(() => m.users_not_operator_title())}</h2>
-        <p class="text-xs text-muted-foreground">{t(() => m.users_not_operator_body())}</p>
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.users_help())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>
+          <span class="font-medium">{t(() => m.users_lifecycle_title())}. </span>
+          {t(() => m.users_lifecycle_body())}
+        </p>
+        <p>
+          <span class="font-medium">{t(() => m.users_not_operator_title())}. </span>
+          {t(() => m.users_not_operator_body())}
+        </p>
       </div>
     </div>
   );
@@ -407,12 +540,14 @@ function Modal(props: { title: string; onClose: () => void; children: JSX.Elemen
   let dialog!: HTMLDivElement;
   const previousFocus =
     typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
-  onMount(() => dialog.focus());
-  onCleanup(() => previousFocus?.focus());
+  onSettled(() => {
+    dialog.focus();
+    return () => previousFocus?.focus();
+  });
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-sidebar-bg/80 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={props.onClose}
     >
@@ -504,7 +639,7 @@ function CreateUserDialog(props: {
     <Modal title={t(() => m.users_create_title())} onClose={props.onClose}>
       <form class="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)}>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_username())}
           </span>
           <Input
@@ -524,7 +659,7 @@ function CreateUserDialog(props: {
           </Show>
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_name())}
           </span>
           <Input
@@ -534,7 +669,7 @@ function CreateUserDialog(props: {
           />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_email())}
           </span>
           <Input
@@ -545,17 +680,17 @@ function CreateUserDialog(props: {
           />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_role())}
           </span>
-          <select
-            class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 text-sm outline-none transition focus-visible:border-primary"
+          <Select
+            options={[
+              { value: "user", label: t(() => m.users_role_user()) },
+              { value: "root", label: t(() => m.users_role_root()) },
+            ]}
             value={role()}
-            onChange={(e) => setRole(e.currentTarget.value as "root" | "user")}
-          >
-            <option value="user">{t(() => m.users_role_user())}</option>
-            <option value="root">{t(() => m.users_role_root())}</option>
-          </select>
+            onChange={setRole}
+          />
         </label>
         <Show when={formError()}>
           {(message) => (
@@ -565,10 +700,10 @@ function CreateUserDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2 pt-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
-          <Button type="submit" size="sm" disabled={pending() || username().trim().length === 0}>
+          <Button type="submit" disabled={pending() || username().trim().length === 0}>
             {t(() => m.users_create_submit())}
           </Button>
         </div>
@@ -612,7 +747,7 @@ function EditUserDialog(props: {
     <Modal title={t(() => m.users_edit_title({ name: props.user.username }))} onClose={props.onClose}>
       <form class="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)}>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_name())}
           </span>
           <Input
@@ -622,7 +757,7 @@ function EditUserDialog(props: {
           />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_email())}
           </span>
           <Input
@@ -633,18 +768,18 @@ function EditUserDialog(props: {
           />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">
+          <span class="text-sm font-medium">
             {t(() => m.users_field_role())}
           </span>
-          <select
-            class="w-full rounded-md border border-hairline bg-background px-2.5 py-1.5 text-sm outline-none transition focus-visible:border-primary disabled:opacity-60"
-            value={role()}
+          <Select
             disabled={props.isLastRoot}
-            onChange={(e) => setRole(e.currentTarget.value as "root" | "user")}
-          >
-            <option value="user">{t(() => m.users_role_user())}</option>
-            <option value="root">{t(() => m.users_role_root())}</option>
-          </select>
+            options={[
+              { value: "user", label: t(() => m.users_role_user()) },
+              { value: "root", label: t(() => m.users_role_root()) },
+            ]}
+            value={role()}
+            onChange={setRole}
+          />
           <Show when={props.isLastRoot}>
             <p class="text-xs text-muted-foreground">
               {t(() => m.users_last_root_protected())}
@@ -659,10 +794,10 @@ function EditUserDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2 pt-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
-          <Button type="submit" size="sm" disabled={pending()}>
+          <Button type="submit" disabled={pending()}>
             {t(() => m.users_edit_submit())}
           </Button>
         </div>
@@ -716,12 +851,12 @@ function ConfirmNameDialog(props: {
           )}
         </Show>
         <div class="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={props.onClose}>
+          <Button type="button" variant="ghost" onClick={props.onClose}>
             {t(() => m.users_cancel())}
           </Button>
           <Button
             type="submit"
-            size="sm"
+           
             variant={props.destructive ? "destructive" : "default"}
             disabled={!matches() || props.pending}
           >
@@ -759,10 +894,10 @@ function SecretDialog(props: {
         {props.password}
       </code>
       <div class="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => void copy()}>
+        <Button variant="outline" onClick={() => void copy()}>
           {copied() ? t(() => m.users_secret_copied()) : t(() => m.users_secret_copy())}
         </Button>
-        <Button size="sm" onClick={props.onClose}>
+        <Button onClick={props.onClose}>
           {t(() => m.users_secret_done())}
         </Button>
       </div>

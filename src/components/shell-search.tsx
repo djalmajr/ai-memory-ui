@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/solid-router";
-import { useQuery } from "@tanstack/solid-query";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { createMemo, createSignal, onCleanup } from "solid-js";
 
 import { CommandPalette, type SearchTarget } from "~/components/command-palette";
 import { listProjects, listWorkspaces, searchPages } from "~/lib/api";
@@ -23,16 +23,16 @@ export function useShellSearch(): ShellSearch {
   const [target, setTarget] = createSignal<SearchTarget>({ kind: "global" });
 
   // ⌘K / Ctrl+K abre de qualquer tela; Esc fecha (a paleta trata o resto).
-  onMount(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    onCleanup(() => window.removeEventListener("keydown", onKey));
-  });
+  // Registrado no corpo do componente (não em `onSettled`, que espera as
+  // queries do shell assentarem — um ⌘K antes disso era perdido).
+  const onKey = (event: KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      setOpen(true);
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  onCleanup(() => window.removeEventListener("keydown", onKey));
 
   const workspacesQuery = useQuery(() => ({
     queryKey: ["shell", "workspaces"],

@@ -1,15 +1,18 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Checkbox } from "~/components/checkbox";
 import { Input } from "~/components/input";
 import { HandoffCard } from "~/components/overview";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState, Metric } from "~/components/ui-bits";
+import { Metric } from "~/components/ui-bits";
+import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminDeleteWorkspace,
   adminMergeWorkspace,
@@ -53,10 +56,9 @@ function TypedConfirm(props: {
   return (
     <div class="flex flex-col gap-2">
       {props.children}
-      <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+      <label class="flex flex-col gap-1.5 text-sm font-medium">
         {t(() => m.workspaces_confirm_name({ name: props.target }))}
-        <Input
-          class="h-9 font-mono"
+        <Input class="font-mono"
           disabled={props.pending}
           onInput={(event) => setTyped(event.currentTarget.value)}
           value={typed()}
@@ -65,7 +67,7 @@ function TypedConfirm(props: {
       <Button
         disabled={!ready()}
         onClick={() => props.onConfirm()}
-        size="sm"
+       
         type="button"
         variant={props.variant ?? "default"}
       >
@@ -78,10 +80,9 @@ function TypedConfirm(props: {
 
 function ConflictSelect(props: { disabled?: boolean; value: ConflictMode; onChange: (value: ConflictMode) => void }) {
   return (
-    <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+    <label class="flex flex-col gap-1.5 text-sm font-medium">
       {t(() => m.workspaces_on_conflict())}
-      <select
-        class="flex h-9 rounded-md border border-input bg-background px-3 text-sm"
+      <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.currentTarget.value as ConflictMode)}
         value={props.value}
@@ -186,97 +187,98 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
               <div class="flex flex-col items-start gap-2" role="alert">
                 <strong class="text-sm">{t(() => m.state_error_title())}</strong>
                 <p class="text-sm text-destructive">{errorText(projectsQ.error)}</p>
-                <Button onClick={() => void projectsQ.refetch()} size="sm" type="button" variant="outline">
+                <Button onClick={() => void projectsQ.refetch()} type="button" variant="outline">
                   {t(() => m.state_retry())}
                 </Button>
               </div>
             }
             when={!projectsQ.isError}
           >
-            <Show
-              fallback={
-                <EmptyState body={t(() => m.home_no_projects_body())} title={t(() => m.home_no_projects_title())} />
-              }
-              when={(projectsQ.data?.length ?? 0) > 0}
-            >
-              <div class="overflow-x-auto">
-                <table class="w-full table-fixed text-sm">
-                  <thead class="text-xs text-muted-foreground">
-                    <tr>
-                      <th class="pb-2 text-left font-medium">{t(() => m.workspaces_col_project())}</th>
-                      <th class="w-24 pb-2 text-right font-medium">{t(() => m.workspaces_col_pages())}</th>
-                      <th class="w-36 pb-2 text-left font-medium">{t(() => m.workspaces_col_updated())}</th>
-                      <Show when={canMutate(tier())}>
-                        <th class="w-48 pb-2 text-right font-medium" />
-                      </Show>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={projectsQ.data}>
-                      {(row) => (
-                        <tr class="border-t border-hairline">
-                          <td class="py-2">
-                            <Link
-                              class="font-mono text-xs hover:underline"
-                              to="/s/$workspace/$project"
-                              params={{ project: row.project_name, workspace: props.workspace }}
-                            >
-                              {row.project_name}
-                            </Link>
-                          </td>
-                          <td class="py-2 text-right">{row.page_count}</td>
-                          <td class="py-2 text-xs text-muted-foreground">{formatDateShort(row.last_updated)}</td>
-                          <Show when={canMutate(tier())}>
-                            <td class="py-2 text-right">
-                              <div class="flex justify-end gap-1">
-                                <Button
-                                  onClick={() => {
-                                    setProjectAction({ kind: "rename", project: row.project_name });
-                                    setProjectTo("");
-                                    setActionError(null);
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  {t(() => m.workspaces_project_rename())}
-                                </Button>
-                                <Button
-                                  onClick={() => {
-                                    setProjectAction({ kind: "move", project: row.project_name });
-                                    setMoveTo(otherWorkspaces()[0] ?? "");
-                                    setMoveConflict("block");
-                                    setMoveForce(false);
-                                    setActionError(null);
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  {t(() => m.workspaces_project_move())}
-                                </Button>
-                                <Button
-                                  onClick={() => {
-                                    setProjectAction({ kind: "purge", project: row.project_name });
-                                    setPurgeForce(false);
-                                    setActionError(null);
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  {t(() => m.workspaces_project_purge())}
-                                </Button>
-                              </div>
-                            </td>
-                          </Show>
-                        </tr>
-                      )}
-                    </For>
-                  </tbody>
-                </table>
-              </div>
-            </Show>
+            <DataGrid
+              empty={t(() => m.home_no_projects_body())}
+              items={projectsQ.data ?? []}
+              tableClass="table-fixed"
+              columns={[
+                {
+                  id: "project",
+                  label: t(() => m.workspaces_col_project()),
+                  search: (row) => row.project_name,
+                  sortValue: (row) => row.project_name,
+                  cell: (row) => (
+                    <Link
+                      class="font-mono text-xs hover:underline"
+                      to="/s/$workspace/$project"
+                      params={{ project: row.project_name, workspace: props.workspace }}
+                    >
+                      {row.project_name}
+                    </Link>
+                  ),
+                },
+                {
+                  id: "pages",
+                  label: t(() => m.workspaces_col_pages()),
+                  class: "w-24 tabular-nums",
+                  sortValue: (row) => row.page_count,
+                  cell: (row) => row.page_count,
+                },
+                {
+                  id: "updated",
+                  label: t(() => m.workspaces_col_updated()),
+                  class: "w-36 text-xs text-muted-foreground",
+                  sortValue: (row) => row.last_updated ?? "",
+                  cell: (row) => formatDateShort(row.last_updated),
+                },
+                ...(canMutate(tier())
+                  ? [
+                      {
+                        id: "actions",
+                        label: "",
+                        class: "w-48",
+                        hideable: false,
+                        cell: (row: (typeof projectsQ.data) extends (infer R)[] | undefined ? R : never) => (
+                          <div class="flex gap-1">
+                        <Button
+                          onClick={() => {
+                            setProjectAction({ kind: "rename", project: row.project_name });
+                            setProjectTo("");
+                            setActionError(null);
+                          }}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {t(() => m.workspaces_project_rename())}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setProjectAction({ kind: "move", project: row.project_name });
+                            setMoveTo(otherWorkspaces()[0] ?? "");
+                            setMoveConflict("block");
+                            setMoveForce(false);
+                            setActionError(null);
+                          }}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {t(() => m.workspaces_project_move())}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setProjectAction({ kind: "purge", project: row.project_name });
+                            setPurgeForce(false);
+                            setActionError(null);
+                          }}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {t(() => m.workspaces_project_purge())}
+                        </Button>
+                      </div>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </Show>
         </Show>
       </section>
@@ -392,10 +394,9 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                   });
                 }}
               >
-                <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                <label class="flex flex-col gap-1.5 text-sm font-medium">
                   {t(() => m.workspaces_rename_to())}
-                  <Input
-                    class="h-9 font-mono"
+                  <Input class="font-mono"
                     disabled={busy()}
                     onInput={(event) => setRenameTo(event.currentTarget.value)}
                     value={renameTo()}
@@ -426,10 +427,9 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                   );
                 }}
               >
-                <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                <label class="flex flex-col gap-1.5 text-sm font-medium">
                   {t(() => m.workspaces_merge_into())}
-                  <select
-                    class="flex h-9 rounded-md border border-input bg-background px-3 font-mono text-sm"
+                  <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
                     disabled={busy()}
                     onChange={(event) => setMergeTo(event.currentTarget.value)}
                     value={mergeTo()}
@@ -477,7 +477,7 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                       setProjectAction(null);
                       setActionError(null);
                     }}
-                    size="sm"
+                   
                     type="button"
                     variant="ghost"
                   >
@@ -499,10 +499,9 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                       });
                     }}
                   >
-                    <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <label class="flex flex-col gap-1.5 text-sm font-medium">
                       {t(() => m.workspaces_rename_to())}
-                      <Input
-                        class="h-9 font-mono"
+                      <Input class="font-mono"
                         disabled={busy()}
                         onInput={(event) => setProjectTo(event.currentTarget.value)}
                         value={projectTo()}
@@ -534,10 +533,9 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                       );
                     }}
                   >
-                    <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <label class="flex flex-col gap-1.5 text-sm font-medium">
                       {t(() => m.workspaces_move_to())}
-                      <select
-                        class="flex h-9 rounded-md border border-input bg-background px-3 font-mono text-sm"
+                      <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
                         disabled={busy()}
                         onChange={(event) => setMoveTo(event.currentTarget.value)}
                         value={moveTo()}

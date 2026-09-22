@@ -1,14 +1,17 @@
 import { useNavigate } from "@tanstack/solid-router";
-import { useQuery } from "@tanstack/solid-query";
-import { Archive } from "lucide-solid";
-import { For, Show, createSignal } from "solid-js";
+import { useQuery } from "~/lib/query";
+import { Archive } from "~/components/icons";
+import { Show, createEffect, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
+import { Input } from "~/components/input";
 import { PageReader } from "~/components/page-reader";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { CollapsibleSection, EmptyState } from "~/components/ui-bits";
-import { adminCheckpoints, adminPendingWrites, adminRestorePage } from "~/lib/admin-api";
+import { TableCell, TableHead, TableRow } from "~/components/table";
+import { adminCheckpoints, adminDeletePage, adminPendingWrites, adminRestorePage, adminWritePage } from "~/lib/admin-api";
 import type { Checkpoint } from "~/lib/admin-types";
 import { ApiError, readPage } from "~/lib/api";
 import { canMutate, isAdminTier, tier } from "~/lib/auth";
@@ -51,6 +54,20 @@ export function ScopePageScreen(props: { path: string; project: string; workspac
     >
       <Show when={!props.path}>
         <EmptyState body={t(() => m.reader_empty_body())} title={t(() => m.reader_empty_title())} />
+        <Show when={canMutate(tier())}>
+          <WritePanel
+            body=""
+            kind="note"
+            path=""
+            pinned={false}
+            project={props.project}
+            tags={[]}
+            tierName="semantic"
+            title=""
+            workspace={props.workspace}
+            onSaved={() => void page$.refetch()}
+          />
+        </Show>
       </Show>
 
       <Show when={props.path && page$.isPending}>
@@ -65,7 +82,7 @@ export function ScopePageScreen(props: { path: string; project: string; workspac
         <div class="flex flex-col items-start gap-2 text-sm" role="alert">
           <strong>{t(() => m.state_error_title())}</strong>
           <span class="text-destructive">{errorText(page$.error)}</span>
-          <Button size="sm" type="button" variant="outline" onClick={() => void page$.refetch()}>
+          <Button type="button" variant="outline" onClick={() => void page$.refetch()}>
             {t(() => m.state_retry())}
           </Button>
         </div>
@@ -88,6 +105,18 @@ export function ScopePageScreen(props: { path: string; project: string; workspac
               }}
             />
             <Show when={canMutate(tier())}>
+              <WritePanel
+                body={page().body_markdown}
+                kind={page().kind}
+                path={page().path}
+                pinned={page().pinned}
+                project={props.project}
+                tags={stringTags(page().frontmatter)}
+                tierName={page().tier}
+                title={page().title}
+                workspace={props.workspace}
+                onSaved={() => void page$.refetch()}
+              />
               <RestorePanel
                 onRestored={() => void page$.refetch()}
                 path={props.path}
@@ -99,6 +128,136 @@ export function ScopePageScreen(props: { path: string; project: string; workspac
         )}
       </Show>
     </Shell>
+  );
+}
+
+function stringTags(frontmatter: Record<string, unknown>): string[] {
+  const tags = frontmatter.tags;
+  return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [];
+}
+
+function WritePanel(props: {
+  body: string;
+  kind: string;
+  onSaved: () => void;
+  path: string;
+  pinned: boolean;
+  project: string;
+  tags: string[];
+  tierName: string;
+  title: string;
+  workspace: string;
+}) {
+  const [path, setPath] = createSignal("");
+  const [body, setBody] = createSignal("");
+  const [confirmPath, setConfirmPath] = createSignal("");
+  const [pending, setPending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [saved, setSaved] = createSignal<string | null>(null);
+
+  createEffect(
+    () => ({ body: props.body, path: props.path }),
+    (next) => {
+      setPath(next.path);
+      setBody(next.body);
+    },
+  );
+
+  const save = async () => {
+    const nextPath = path().trim();
+    if (!nextPath || !body().trim()) return;
+    setPending(true);
+    setError(null);
+    try {
+      const written = await adminWritePage({
+        body: body(),
+        kind: props.kind || undefined,
+        path: nextPath,
+        pinned: props.pinned,
+        project: props.project,
+        tags: props.tags,
+        tier: props.tierName || "semantic",
+        title: props.title || undefined,
+        workspace: props.workspace,
+      });
+      setSaved(written.path);
+      props.onSaved();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : String(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const remove = async () => {
+    if (confirmPath() !== path()) return;
+    setPending(true);
+    setError(null);
+    try {
+      await adminDeletePage({ project: props.project, workspace: props.workspace }, path());
+      setSaved(null);
+      props.onSaved();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : String(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
+      <h2 class="text-sm font-medium">{t(() => m.page_write_title())}</h2>
+      <label class="flex flex-col gap-1.5 text-sm">
+        {t(() => m.page_write_path())}
+        <Input
+          disabled={props.path.length > 0}
+          value={path()}
+          onInput={(event) => setPath(event.currentTarget.value)}
+        />
+      </label>
+      <label class="flex flex-col gap-1.5 text-sm">
+        {t(() => m.page_write_body())}
+        <textarea
+          class="min-h-40 rounded-lg border border-input bg-transparent p-3 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          value={body()}
+          onInput={(event) => setBody(event.currentTarget.value)}
+        />
+      </label>
+      <div class="flex flex-wrap gap-2">
+        <Button disabled={pending()} type="button" onClick={() => void save()}>
+          {t(() => m.page_write_save())}
+        </Button>
+      </div>
+      <Show when={props.path.length > 0}>
+        <div class="flex flex-col gap-2 border-t border-hairline pt-3">
+          <p class="text-xs text-muted-foreground">{t(() => m.page_delete_hint())}</p>
+          <Input
+            value={confirmPath()}
+            onInput={(event) => setConfirmPath(event.currentTarget.value)}
+          />
+          <Button
+            disabled={pending() || confirmPath() !== path()}
+            type="button"
+            variant="outline"
+            onClick={() => void remove()}
+          >
+            {t(() => m.page_delete_confirm())}
+          </Button>
+        </div>
+      </Show>
+      <Show when={error()}>
+        {(message) => (
+          <p class="text-sm text-destructive" role="alert">
+            {message()}
+          </p>
+        )}
+      </Show>
+      <Show when={saved()}>
+        {(value) => (
+          <p class="text-sm text-muted-foreground">{t(() => m.page_write_saved({ path: value() }))}</p>
+        )}
+      </Show>
+    </section>
   );
 }
 
@@ -152,56 +311,59 @@ function RestorePanel(props: {
         <Show when={checkpoints$.isError}>
           <div class="flex flex-col items-start gap-2 text-sm" role="alert">
             <span class="text-destructive">{errorText(checkpoints$.error)}</span>
-            <Button size="sm" type="button" variant="outline" onClick={() => void checkpoints$.refetch()}>
+            <Button type="button" variant="outline" onClick={() => void checkpoints$.refetch()}>
               {t(() => m.state_retry())}
             </Button>
           </div>
         </Show>
 
         <Show when={!checkpoints$.isPending && !checkpoints$.isError}>
-          <Show
-            fallback={<EmptyState body={t(() => m.page_restore_empty())} title={t(() => m.state_empty_title())} />}
-            when={(checkpoints$.data?.length ?? 0) > 0}
-          >
-            <div class="overflow-x-auto rounded-lg border border-hairline">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="border-b border-hairline text-left text-xs text-muted-foreground">
-                    <th class="w-28 px-2 py-1.5 font-medium">{t(() => m.page_col_commit())}</th>
-                    <th class="min-w-0 px-2 py-1.5 font-medium">{t(() => m.page_col_summary())}</th>
-                    <th class="w-36 px-2 py-1.5 font-medium">{t(() => m.page_col_date())}</th>
-                    <th class="w-28 px-2 py-1.5 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={checkpoints$.data ?? []}>
-                    {(checkpoint) => (
-                      <tr class="border-b border-hairline last:border-0">
-                        <td class="px-2 py-1.5 font-mono text-xs">{checkpoint.short_oid}</td>
-                        <td class="min-w-0 truncate px-2 py-1.5">{checkpoint.summary}</td>
-                        <td class="px-2 py-1.5 text-muted-foreground">
-                          {formatDateTime(fromUnixSeconds(checkpoint.time))}
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <Button
-                            disabled={restoringOid() !== null}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                            onClick={() => void restore(checkpoint)}
-                          >
-                            {restoringOid() === checkpoint.oid
-                              ? t(() => m.page_restore_working())
-                              : t(() => m.page_restore_action())}
-                          </Button>
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
-          </Show>
+          <DataGrid
+            empty={t(() => m.page_restore_empty())}
+            items={checkpoints$.data ?? []}
+            columns={[
+              {
+                id: "commit",
+                label: t(() => m.page_col_commit()),
+                class: "w-28 font-mono text-xs",
+                search: (checkpoint) => `${checkpoint.short_oid} ${checkpoint.summary}`,
+                sortValue: (checkpoint) => checkpoint.short_oid,
+                cell: (checkpoint) => checkpoint.short_oid,
+              },
+              {
+                id: "summary",
+                label: t(() => m.page_col_summary()),
+                class: "min-w-0 truncate",
+                sortValue: (checkpoint) => checkpoint.summary,
+                cell: (checkpoint) => checkpoint.summary,
+              },
+              {
+                id: "date",
+                label: t(() => m.page_col_date()),
+                class: "w-36 text-muted-foreground",
+                sortValue: (checkpoint) => checkpoint.time,
+                cell: (checkpoint) => formatDateTime(fromUnixSeconds(checkpoint.time)),
+              },
+              {
+                id: "restore",
+                label: t(() => m.page_restore_action()),
+                class: "w-28",
+                hideable: false,
+                cell: (checkpoint) => (
+                  <Button
+                    disabled={restoringOid() !== null}
+                    type="button"
+                    variant="outline"
+                    onClick={() => void restore(checkpoint)}
+                  >
+                    {restoringOid() === checkpoint.oid
+                      ? t(() => m.page_restore_working())
+                      : t(() => m.page_restore_action())}
+                  </Button>
+                ),
+              },
+            ]}
+          />
         </Show>
 
         <Show when={restoreError()}>

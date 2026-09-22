@@ -9,7 +9,7 @@ import {
   FileText,
   History,
   ShieldCheck,
-} from "lucide-solid";
+} from "~/components/icons";
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import type { ProjectPages } from "~/components/file-tree";
@@ -127,8 +127,7 @@ export function HealthRow(props: {
       >
         <span class="flex items-center gap-1 text-muted-foreground">
           <ChevronRight
-            class={cn("transition", expandable() ? "opacity-100" : "opacity-0")}
-            classList={{ "rotate-90": open() }}
+            class={cn("transition", expandable() ? "opacity-100" : "opacity-0", open() && "rotate-90")}
             size={13}
           />
           {props.label}

@@ -5,24 +5,34 @@ import {
   adminApiCredentials,
   adminAuditContamination,
   adminBackup,
+  adminCancelMessage,
   adminCheckpoints,
   adminCommit,
+  adminCompact,
   adminCreateApiCredential,
   adminCreateUser,
+  adminDeletePage,
   adminDisableUser,
   adminEnableUser,
+  adminExpireHandoffs,
+  adminExportOkf,
+  adminMessages,
+  adminMoveSession,
   adminOpenSessions,
   adminPendingWrites,
   adminPurgeProject,
+  adminPurgeSession,
   adminReorg,
   adminResetUserPassword,
   adminRestorePage,
   adminRevokeApiCredential,
   adminRotateApiCredential,
+  adminSendMessage,
   adminSessionsByAgent,
   adminStatus,
   adminUpdateUser,
   adminUsers,
+  adminWritePage,
 } from "~/lib/admin-api";
 
 function response(
@@ -261,6 +271,102 @@ describe("corpos de request", () => {
       path: "a/b.md",
       rev: "c0ffee",
     });
+  });
+
+  it("compact manda confirm=true", async () => {
+    fetchMock.mockResolvedValueOnce(response({ bytes_before: 1, bytes_after: 1, bytes_reclaimed: 0 }));
+    await adminCompact();
+    expect(lastUrl()).toBe("/admin/compact");
+    expect(JSON.parse(lastInit().body as string)).toEqual({ confirm: true });
+  });
+
+  it("export-okf é POST com workspace e project na query", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(null, {
+        headers: { "Content-Disposition": 'attachment; filename="okf-bundle.tar.gz"' },
+      }),
+    );
+    const out = await adminExportOkf({ workspace: "w", project: "p" });
+    expect(lastUrl()).toBe("/admin/export-okf?project=p&workspace=w");
+    expect(lastInit().method).toBe("POST");
+    expect(out.filename).toBe("okf-bundle.tar.gz");
+  });
+
+  it("expire handoffs manda confirm=true no escopo", async () => {
+    fetchMock.mockResolvedValueOnce(response({ expired: 2 }));
+    await adminExpireHandoffs({ workspace: "w", project: "p" });
+    expect(JSON.parse(lastInit().body as string)).toEqual({
+      workspace: "w",
+      project: "p",
+      confirm: true,
+    });
+  });
+
+  it("purge-session manda o UUID e confirm=true", async () => {
+    fetchMock.mockResolvedValueOnce(response({}));
+    await adminPurgeSession({ workspace: "w", project: "p" }, "11111111-1111-1111-1111-111111111111");
+    expect(JSON.parse(lastInit().body as string)).toEqual({
+      workspace: "w",
+      project: "p",
+      session_id: "11111111-1111-1111-1111-111111111111",
+      confirm: true,
+    });
+  });
+
+  it("move-session repassa confirm sem forçar true", async () => {
+    fetchMock.mockResolvedValueOnce(response({ dry_run: true }));
+    await adminMoveSession({
+      session_id: "11111111-1111-1111-1111-111111111111",
+      project: "dest",
+      confirm: false,
+    });
+    expect(JSON.parse(lastInit().body as string)).toEqual({
+      session_id: "11111111-1111-1111-1111-111111111111",
+      project: "dest",
+      confirm: false,
+    });
+  });
+
+  it("write-page e delete-page mandam o path", async () => {
+    fetchMock.mockResolvedValueOnce(response({ page_id: "1", path: "notes/a.md" }));
+    await adminWritePage({ workspace: "w", project: "p", path: "notes/a.md", body: "# A" });
+    expect(JSON.parse(lastInit().body as string)).toMatchObject({
+      workspace: "w",
+      project: "p",
+      path: "notes/a.md",
+      body: "# A",
+    });
+    fetchMock.mockResolvedValueOnce(response({ deleted: true, path: "notes/a.md" }));
+    await adminDeletePage({ workspace: "w", project: "p" }, "notes/a.md");
+    expect(JSON.parse(lastInit().body as string)).toEqual({
+      workspace: "w",
+      project: "p",
+      path: "notes/a.md",
+    });
+  });
+
+  it("messages lista inbox e send carrega os dois escopos", async () => {
+    fetchMock.mockResolvedValueOnce(response({ messages: [] }));
+    await adminMessages({ workspace: "w", project: "p" }, "inbox", 20);
+    expect(lastUrl()).toBe("/admin/messages?box=inbox&limit=20&project=p&workspace=w");
+    fetchMock.mockResolvedValueOnce(response({ message_id: "m1" }));
+    await adminSendMessage({
+      from_workspace: "w",
+      from_project: "p",
+      to_workspace: "other",
+      to_project: "q",
+      body: "ping",
+    });
+    expect(JSON.parse(lastInit().body as string)).toEqual({
+      from_workspace: "w",
+      from_project: "p",
+      to_workspace: "other",
+      to_project: "q",
+      body: "ping",
+    });
+    fetchMock.mockResolvedValueOnce(response({ cancelled: 1 }));
+    await adminCancelMessage({ workspace: "w", project: "p" }, "11111111-1111-1111-1111-111111111111");
+    expect(lastUrl()).toBe("/admin/messages/cancel");
   });
 });
 

@@ -1,11 +1,12 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { Link, useNavigate } from "@tanstack/solid-router";
-import { ArrowRight } from "lucide-solid";
+import { ArrowRight, CircleHelp } from "~/components/icons";
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
 import { EmptyState } from "~/components/ui-bits";
 import { graph } from "~/lib/api";
 import { t } from "~/lib/i18n";
@@ -41,6 +42,37 @@ const LIST_LIMIT = 100;
 // workspace/projeto. O componente anterior concatenava sem separador e
 // depois fazia `split("")`, quebrando nomes multi-caractere.
 const KEY_SEP = "\u0000";
+
+function GraphHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "graph-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.graph_help())}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full left-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>{t(() => m.graph_subtitle())}</p>
+      </div>
+    </div>
+  );
+}
 
 function nodeKey(workspace: string, project: string): string {
   return `${workspace}/${project}`;
@@ -157,17 +189,7 @@ export function GraphScreen() {
     });
 
   return (
-    <Shell
-      actions={
-        <Show when={graphQ.data}>
-          {(data) => (
-            <span>{t(() => m.graph_stats({ links: data().edges.length, projects: model().nodes.length }))}</span>
-          )}
-        </Show>
-      }
-      heading={<span>{t(() => m.nav_graph())}</span>}
-      level="server"
-    >
+    <Shell heading={<span>{t(() => m.nav_graph())}</span>} level="server">
       <Show
         fallback={
           <Show
@@ -182,7 +204,7 @@ export function GraphScreen() {
             <div class="flex flex-col items-start gap-2" role="alert">
               <strong class="text-sm">{t(() => m.state_error_title())}</strong>
               <p class="text-sm text-destructive">{graphQ.error?.message}</p>
-              <Button onClick={() => void graphQ.refetch()} size="sm" type="button" variant="outline">
+              <Button onClick={() => void graphQ.refetch()} type="button" variant="outline">
                 {t(() => m.state_retry())}
               </Button>
             </div>
@@ -199,14 +221,23 @@ export function GraphScreen() {
             }
             when={data().edges.length > 0}
           >
-            <section class="flex flex-col gap-1.5">
-              <h2 class="text-sm font-semibold" id="graph-map-heading">
-                {t(() => m.graph_map_title())}
-              </h2>
-              <p class="text-xs text-muted-foreground">{t(() => m.graph_subtitle())}</p>
+            <Tabs defaultValue="map">
+              <div class="flex items-center gap-2">
+                <TabsList>
+                  <TabsTrigger value="map">{t(() => m.graph_map_title())}</TabsTrigger>
+                  <TabsTrigger value="links">
+                    {t(() => m.graph_links_title({ count: data().edges.length }))}
+                  </TabsTrigger>
+                </TabsList>
+                <GraphHelp />
+                <span class="ml-auto text-xs text-muted-foreground">
+                  {t(() => m.graph_stats({ links: data().edges.length, projects: model().nodes.length }))}
+                </span>
+              </div>
+              <TabsContent value="map" class="flex flex-col gap-1.5">
               <div class="rounded-lg border border-hairline p-4">
                 <svg
-                  aria-labelledby="graph-map-heading"
+                  aria-label={t(() => m.graph_map_title())}
                   class="mx-auto h-auto w-full"
                   style={{ "max-width": `${WIDTH}px` }}
                   viewBox={`0 0 ${WIDTH} ${model().height}`}
@@ -294,11 +325,10 @@ export function GraphScreen() {
                   </For>
                 </svg>
               </div>
-            </section>
+              </TabsContent>
 
-            <section class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch">
-                <h2 class="text-sm font-semibold">{t(() => m.graph_links_title({ count: data().edges.length }))}</h2>
+              <TabsContent value="links" class="flex flex-col gap-1.5">
+              <div class="flex items-center justify-end gap-3">
                 <input
                   aria-label={t(() => m.graph_filter_placeholder())}
                   class="w-64 rounded-md border border-hairline bg-background px-2.5 py-1.5 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-primary max-md:w-full"
@@ -341,7 +371,8 @@ export function GraphScreen() {
                   </div>
                 </Show>
               </div>
-            </section>
+              </TabsContent>
+            </Tabs>
           </Show>
         )}
       </Show>

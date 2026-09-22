@@ -1,9 +1,9 @@
 import path from 'node:path'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
+import solid from '@solidjs/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { defineConfig } from 'vite'
-import solid from 'vite-plugin-solid'
 
 export default defineConfig({
   // Relative asset URLs: the server injects a `<base href>` (e.g. `/wiki/web/`
@@ -28,12 +28,24 @@ export default defineConfig({
     alias: {
       '~': path.resolve(__dirname, './src'),
     },
+    // One runtime copy in the bundle and in the split chunks (see `overrides`
+    // in package.json for the rc pin).
+    dedupe: ['solid-js', '@solidjs/web'],
   },
-  // Dev-only: proxy /api/v1 para um ai-memory rodando localmente. Override com
-  // AI_MEMORY_PROXY (ex: http://127.0.0.1:49374 p/ o workspace zomme).
+  // Dev-only: encaminha a API para o engine local (compose em ~/.ai-memory-local,
+  // porta 49380). Sem isso o Vite responde 404 em /admin e a visão geral mostra
+  // "Could not load". Override com AI_MEMORY_PROXY.
   server: {
     proxy: {
       '/api/v1': {
+        target: process.env.AI_MEMORY_PROXY ?? 'http://127.0.0.1:49380',
+        changeOrigin: true,
+      },
+      '/admin': {
+        target: process.env.AI_MEMORY_PROXY ?? 'http://127.0.0.1:49380',
+        changeOrigin: true,
+      },
+      '/auth': {
         target: process.env.AI_MEMORY_PROXY ?? 'http://127.0.0.1:49380',
         changeOrigin: true,
       },

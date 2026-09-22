@@ -1,11 +1,11 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { EmptyState } from "~/components/ui-bits";
 import { ApiError, listWorkspaces } from "~/lib/api";
 import { formatDateShort } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
@@ -25,15 +25,7 @@ export function WorkspacesScreen() {
   }));
 
   return (
-    <Shell
-      actions={
-        <Show when={workspacesQ.data}>
-          {(rows) => <span>{t(() => m.home_workspaces_count({ count: rows().length }))}</span>}
-        </Show>
-      }
-      heading={<span>{t(() => m.nav_workspaces())}</span>}
-      level="server"
-    >
+    <Shell heading={<span>{t(() => m.nav_workspaces())}</span>} level="server">
       <Show
         fallback={
           <div class="flex flex-col gap-3">
@@ -48,52 +40,56 @@ export function WorkspacesScreen() {
             <div class="flex flex-col items-start gap-2" role="alert">
               <strong class="text-sm">{t(() => m.state_error_title())}</strong>
               <p class="text-sm text-destructive">{errorText(workspacesQ.error)}</p>
-              <Button onClick={() => void workspacesQ.refetch()} size="sm" type="button" variant="outline">
+              <Button onClick={() => void workspacesQ.refetch()} type="button" variant="outline">
                 {t(() => m.state_retry())}
               </Button>
             </div>
           }
           when={!workspacesQ.isError}
         >
-          <Show
-            fallback={
-              <EmptyState body={t(() => m.workspaces_empty_body())} title={t(() => m.state_empty_title())} />
-            }
-            when={(workspacesQ.data?.length ?? 0) > 0}
-          >
-            <div class="overflow-x-auto">
-              <table class="w-full table-fixed text-sm">
-                <thead class="text-xs text-muted-foreground">
-                  <tr>
-                    <th class="pb-2 text-left font-medium">{t(() => m.workspaces_col_name())}</th>
-                    <th class="w-24 pb-2 text-right font-medium">{t(() => m.workspaces_col_projects())}</th>
-                    <th class="w-24 pb-2 text-right font-medium">{t(() => m.workspaces_col_pages())}</th>
-                    <th class="w-36 pb-2 text-left font-medium">{t(() => m.workspaces_col_updated())}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={workspacesQ.data}>
-                    {(row) => (
-                      <tr class="border-t border-hairline">
-                        <td class="py-2">
-                          <Link
-                            class="font-mono text-xs hover:underline"
-                            to="/workspaces/$workspace"
-                            params={{ workspace: row.workspace_name }}
-                          >
-                            {row.workspace_name}
-                          </Link>
-                        </td>
-                        <td class="py-2 text-right">{row.project_count}</td>
-                        <td class="py-2 text-right">{row.page_count}</td>
-                        <td class="py-2 text-xs text-muted-foreground">{formatDateShort(row.last_updated)}</td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
-          </Show>
+          <DataGrid
+            empty={t(() => m.workspaces_empty_body())}
+            items={workspacesQ.data ?? []}
+            tableClass="table-fixed"
+            columns={[
+              {
+                id: "name",
+                label: t(() => m.workspaces_col_name()),
+                search: (row) => row.workspace_name,
+                sortValue: (row) => row.workspace_name,
+                cell: (row) => (
+                  <Link
+                    class="font-mono text-xs hover:underline"
+                    to="/workspaces/$workspace"
+                    params={{ workspace: row.workspace_name }}
+                  >
+                    {row.workspace_name}
+                  </Link>
+                ),
+              },
+              {
+                id: "projects",
+                label: t(() => m.workspaces_col_projects()),
+                class: "w-24 tabular-nums",
+                sortValue: (row) => row.project_count,
+                cell: (row) => row.project_count,
+              },
+              {
+                id: "pages",
+                label: t(() => m.workspaces_col_pages()),
+                class: "w-24 tabular-nums",
+                sortValue: (row) => row.page_count,
+                cell: (row) => row.page_count,
+              },
+              {
+                id: "updated",
+                label: t(() => m.workspaces_col_updated()),
+                class: "w-36 text-xs text-muted-foreground",
+                sortValue: (row) => row.last_updated ?? "",
+                cell: (row) => formatDateShort(row.last_updated),
+              },
+            ]}
+          />
         </Show>
       </Show>
     </Shell>

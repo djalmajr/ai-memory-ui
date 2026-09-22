@@ -14,8 +14,9 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import MarkdownIt from "markdown-it";
-import { createMemo } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
+import { bindProseScrollAreas } from "~/components/scroll-area";
 import { cn } from "~/lib/utils";
 
 // Linguagens curadas (corta o bundle vs. o highlight.js completo).
@@ -314,8 +315,19 @@ export function Markdown(props: {
       basePath: routerBasePath(),
     }),
   );
+  const [host, setHost] = createSignal<HTMLDivElement | undefined>(undefined, { ownedWrite: true });
+  let stop: (() => void) | undefined;
+  createEffect(
+    () => ({ el: host(), markup: html() }),
+    (next) => {
+      stop?.();
+      stop = next.el ? bindProseScrollAreas(next.el) : undefined;
+    },
+  );
+  onCleanup(() => stop?.());
   return (
     <div
+      ref={setHost}
       class={cn(
         "prose prose-sm max-w-none dark:prose-invert",
         "prose-code:before:content-none prose-code:after:content-none",
