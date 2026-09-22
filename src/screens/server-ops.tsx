@@ -8,7 +8,6 @@ import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminBackup, adminCheckpoints, adminCommit, adminCompact, adminExportOkf, adminReorg, type CompactReport } from "~/lib/admin-api";
 import type { Checkpoint, CommitResult } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";

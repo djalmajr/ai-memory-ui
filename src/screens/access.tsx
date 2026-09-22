@@ -1,5 +1,5 @@
 import { useQuery } from "~/lib/query";
-import { Show, createSignal, onSettled } from "solid-js";
+import { For, Show, createSignal, onSettled } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
@@ -10,7 +10,6 @@ import { Input } from "~/components/input";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminApiCredentials,
   adminCreateApiCredential,

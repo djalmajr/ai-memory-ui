@@ -1,15 +1,12 @@
 import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { Show } from "solid-js";
 
 import { Button } from "~/components/button";
 import { DataGrid } from "~/components/data-grid";
-import { Input } from "~/components/input";
-import { kindCounts } from "~/components/overview";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { KindBadge } from "~/components/ui-bits";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminPendingWrites } from "~/lib/admin-api";
 import { ApiError, listPages } from "~/lib/api";
 import { isAdminTier, tier } from "~/lib/auth";
@@ -25,12 +22,8 @@ import * as m from "~/paraglide/messages";
 // histórico por página. O único caminho de histórico é o checkpoint git no
 // leitor (`POST /admin/restore-page` com `rev` = oid).
 
-const KIND_ALL = "all";
-
 export function ScopeWikiScreen(props: { project: string; workspace: string }) {
   const scope = () => ({ project: props.project, workspace: props.workspace });
-  const [query, setQuery] = createSignal("");
-  const [kind, setKind] = createSignal(KIND_ALL);
 
   const pages$ = useQuery(() => ({
     queryFn: () => listPages({ project: props.project, workspace: props.workspace }),
@@ -42,18 +35,6 @@ export function ScopeWikiScreen(props: { project: string; workspace: string }) {
     queryFn: () => adminPendingWrites(scope(), { limit: 200, status: "pending" }),
     queryKey: ["admin", "pending-writes", props.workspace, props.project, "pending", 200],
   }));
-
-  const kinds = createMemo(() => kindCounts(pages$.data ?? []));
-
-  const filtered = createMemo(() => {
-    const needle = query().trim().toLowerCase();
-    const selected = kind();
-    return (pages$.data ?? []).filter((page) => {
-      if (selected !== KIND_ALL && page.kind !== selected) return false;
-      if (!needle) return true;
-      return page.path.toLowerCase().includes(needle) || page.title.toLowerCase().includes(needle);
-    });
-  });
 
   const showBanner = () => {
     const current = tier();

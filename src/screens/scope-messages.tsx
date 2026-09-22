@@ -8,7 +8,6 @@ import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminCancelMessage,
   adminMessages,

@@ -8,7 +8,6 @@ import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminMoveSession, adminOpenSessions, adminPendingWrites, adminPurgeSession } from "~/lib/admin-api";
 import { AGENT_KINDS } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";

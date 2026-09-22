@@ -452,7 +452,7 @@ export function DataGrid<T>(props: {
               when={visible().length > 0}
               fallback={
                 <TableRow>
-                  <TableCell class="h-24 text-center whitespace-normal text-muted-foreground" colSpan={Math.max(shown().length, 1)}>
+                  <TableCell class="h-24 text-center whitespace-normal text-muted-foreground" colspan={Math.max(shown().length, 1)}>
                     {props.empty}
                   </TableCell>
                 </TableRow>

@@ -12,7 +12,6 @@ import { HandoffCard } from "~/components/overview";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { Metric } from "~/components/ui-bits";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import {
   adminDeleteWorkspace,
   adminMergeWorkspace,

@@ -52,7 +52,7 @@ export function Select<T extends string>(props: {
                 const selected = () => option.value === props.value;
                 return (
                   <button
-                    aria-selected={selected()}
+                    aria-selected={selected() ? "true" : "false"}
                     class={cn(
                       "relative flex w-full cursor-default items-center rounded-md py-1 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground",
                       selected() && "bg-accent/60",

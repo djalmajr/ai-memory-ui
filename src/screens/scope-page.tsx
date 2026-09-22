@@ -10,7 +10,6 @@ import { PageReader } from "~/components/page-reader";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { CollapsibleSection, EmptyState } from "~/components/ui-bits";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminCheckpoints, adminDeletePage, adminPendingWrites, adminRestorePage, adminWritePage } from "~/lib/admin-api";
 import type { Checkpoint } from "~/lib/admin-types";
 import { ApiError, readPage } from "~/lib/api";

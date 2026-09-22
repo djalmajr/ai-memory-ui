@@ -6,7 +6,6 @@ import { Button } from "~/components/button";
 import { DataGrid } from "~/components/data-grid";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminPendingWrites, adminExpireHandoffs } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
 import { canMutate, isAdminTier, tier } from "~/lib/auth";
@@ -16,7 +15,6 @@ import {
   HANDOFF_STATES,
   labelIdentityKey,
   listHandoffs,
-  type ApiHandoffEntry,
   type HandoffState,
 } from "~/lib/scope-api";
 import * as m from "~/paraglide/messages";

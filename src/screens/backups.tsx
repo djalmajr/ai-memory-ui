@@ -7,7 +7,6 @@ import { DataGrid } from "~/components/data-grid";
 import { ScrollArea } from "~/components/scroll-area";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { TableCell, TableHead, TableRow } from "~/components/table";
 import { adminBackup, adminCheckpoints } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
 import { canMutate, tier } from "~/lib/auth";
