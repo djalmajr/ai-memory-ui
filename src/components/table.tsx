@@ -6,10 +6,10 @@ import { cn } from "~/lib/utils"
 
 // shadcn base-nova `table` (appliance). Wide tables scroll on the ScrollArea
 // thumb instead of the native horizontal bar.
-function Table(props: JSX.HTMLAttributes<HTMLTableElement>) {
-  const others = omit(props, "class")
+function Table(props: JSX.HTMLAttributes<HTMLTableElement> & { scrollClass?: string }) {
+  const others = omit(props, "class", "scrollClass")
   return (
-    <ScrollArea class="w-full">
+    <ScrollArea class={cn("w-full", props.scrollClass)}>
       <table class={cn("w-full caption-bottom text-sm", props.class)} data-slot="table" {...others} />
     </ScrollArea>
   )
@@ -22,7 +22,13 @@ function TableHeader(props: JSX.HTMLAttributes<HTMLTableSectionElement>) {
 
 function TableBody(props: JSX.HTMLAttributes<HTMLTableSectionElement>) {
   const others = omit(props, "class")
-  return <tbody class={cn("[&_tr:last-child]:border-0", props.class)} data-slot="table-body" {...others} />
+  return (
+    <tbody
+      class={cn("[&_tr:last-child]:border-0 [&_tr]:hover:bg-muted/50", props.class)}
+      data-slot="table-body"
+      {...others}
+    />
+  )
 }
 
 function TableFooter(props: JSX.HTMLAttributes<HTMLTableSectionElement>) {
@@ -40,7 +46,7 @@ function TableRow(props: JSX.HTMLAttributes<HTMLTableRowElement>) {
   const others = omit(props, "class")
   return (
     <tr
-      class={cn("border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted", props.class)}
+      class={cn("border-b transition-colors data-[state=selected]:bg-muted", props.class)}
       data-slot="table-row"
       {...others}
     />

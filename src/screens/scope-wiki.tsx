@@ -1,8 +1,9 @@
 import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { Show } from "solid-js";
+import { Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { CircleHelp } from "~/components/icons";
 import { DataGrid } from "~/components/data-grid";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
@@ -22,7 +23,7 @@ import * as m from "~/paraglide/messages";
 // histórico por página. O único caminho de histórico é o checkpoint git no
 // leitor (`POST /admin/restore-page` com `rev` = oid).
 
-export function ScopeWikiScreen(props: { project: string; workspace: string }) {
+export function ScopeWikiScreen(props: { project: string; query?: string; workspace: string }) {
   const scope = () => ({ project: props.project, workspace: props.workspace });
 
   const pages$ = useQuery(() => ({
@@ -44,12 +45,9 @@ export function ScopeWikiScreen(props: { project: string; workspace: string }) {
   return (
     <Shell
       description={<span>{t(() => m.wiki_subtitle())}</span>}
-      actions={
-        <Show when={pages$.data}>
-          {(pages) => <span>{t(() => m.count_pages({ count: pages().length }))}</span>}
-        </Show>
-      }
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_wiki())} />}
+      screen={t(() => m.nav_wiki())}
+      help={<WikiHelp />}
       level="scope"
       pendingCount={pending$.data?.length}
       scope={scope()}
@@ -79,22 +77,58 @@ export function ScopeWikiScreen(props: { project: string; workspace: string }) {
       </Show>
 
       <Show when={!pages$.isPending && !pages$.isError}>
-          <div class="flex flex-col gap-4">
-            <p class="text-xs text-muted-foreground">{t(() => m.wiki_note_history())}</p>
-            <WikiTable empty={t(() => m.wiki_empty_body())} pages={pages$.data ?? []} scope={scope()} />
-          </div>
+          <WikiTable
+            empty={t(() => m.wiki_empty_body())}
+            pages={pages$.data ?? []}
+            query={props.query}
+            scope={scope()}
+          />
       </Show>
     </Shell>
+  );
+}
+
+function WikiHelp() {
+  const [open, setOpen] = createSignal(false);
+  const id = "wiki-help";
+  return (
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <Button
+        aria-describedby={id}
+        aria-label={t(() => m.wiki_help())}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+        onBlur={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+      >
+        <CircleHelp />
+      </Button>
+      <div
+        class={
+          open()
+            ? "absolute top-full left-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            : "sr-only"
+        }
+        id={id}
+        role="tooltip"
+      >
+        <p>{t(() => m.wiki_note_history())}</p>
+      </div>
+    </div>
   );
 }
 
 function WikiTable(props: {
   empty: string;
   pages: PageSummary[];
+  query?: string;
   scope: { project: string; workspace: string };
 }) {
   return (
     <DataGrid
+      countLabel={(total) => t(() => m.count_pages({ count: total }))}
+      defaultQuery={props.query}
       empty={props.empty}
       items={props.pages}
       tableClass="table-fixed"
@@ -107,7 +141,7 @@ function WikiTable(props: {
           sortValue: (page) => page.path,
           cell: (page) => (
             <Link
-              class="block truncate font-mono text-xs text-foreground hover:text-primary"
+              class="block truncate hover:text-primary"
               to="/s/$workspace/$project/pages/$"
               params={{ _splat: page.path, project: props.scope.project, workspace: props.scope.workspace }}
             >
@@ -133,7 +167,7 @@ function WikiTable(props: {
         {
           id: "kind",
           label: t(() => m.wiki_col_kind()),
-          class: "w-24",
+          class: "w-28",
           filter: { label: t(() => m.wiki_col_kind()), value: (page) => page.kind },
           sortValue: (page) => page.kind,
           cell: (page) => <KindBadge kind={page.kind} />,
@@ -141,14 +175,14 @@ function WikiTable(props: {
         {
           id: "tier",
           label: t(() => m.wiki_col_tier()),
-          class: "w-28 text-muted-foreground",
+          class: "w-28",
           sortValue: (page) => page.tier,
           cell: (page) => page.tier,
         },
         {
           id: "updated",
           label: t(() => m.wiki_col_updated()),
-          class: "w-32 text-muted-foreground",
+          class: "w-32",
           sortValue: (page) => page.updated_at,
           cell: (page) => formatDateShort(page.updated_at),
         },

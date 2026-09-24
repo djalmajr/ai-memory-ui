@@ -2,6 +2,7 @@ import { Link } from "@tanstack/solid-router";
 import { Box, ChevronRight, FileText, Folder, FolderOpen } from "~/components/icons";
 import { For, Match, Show, Switch, createSignal } from "solid-js";
 
+import { Tooltip } from "~/components/tooltip";
 import { cn } from "~/lib/utils";
 import type { PageSummary } from "~/lib/types";
 
@@ -103,6 +104,7 @@ export function FileTreeNodes(props: {
         return (
           <Switch>
             <Match when={node.type === "file"}>
+              <Tooltip class="flex w-full min-w-0" content={node.name}>
               <Link
                 class={cn(
                   "flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left outline-none transition hover:bg-hover focus-visible:bg-hover",
@@ -111,19 +113,19 @@ export function FileTreeNodes(props: {
                 data-testid={`page-${node.project}/${node.path}`}
                 params={{ _splat: node.path, project: node.project, workspace: node.workspace }}
                 style={{ "padding-left": indent() }}
-                title={node.name}
                 to="/s/$workspace/$project/pages/$"
               >
                 <span aria-hidden="true" class="w-4 shrink-0" />
                 <FileText class={cn("shrink-0", selected() ? "opacity-100" : "opacity-70")} size={16} />
                 <span class="min-w-0 flex-1 truncate text-sm">{node.name}</span>
               </Link>
+              </Tooltip>
             </Match>
             <Match when={node.type === "dir"}>
+              <Tooltip class="flex w-full min-w-0" content={node.name}>
               <button
                 class="flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left outline-none transition hover:bg-hover focus-visible:bg-hover"
                 style={{ "padding-left": indent() }}
-                title={node.name}
                 type="button"
                 onClick={() => props.onToggleFolder(folderKey(node))}
               >
@@ -138,13 +140,14 @@ export function FileTreeNodes(props: {
                 </Show>
                 <span class="min-w-0 flex-1 truncate text-sm">{node.name}</span>
               </button>
+              </Tooltip>
               {renderChildren()}
             </Match>
             <Match when={node.type === "project"}>
+              <Tooltip class="flex w-full min-w-0" content={node.name}>
               <button
                 class="flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-2 text-left outline-none transition hover:bg-hover focus-visible:bg-hover"
                 style={{ "padding-left": indent() }}
-                title={node.name}
                 type="button"
                 onClick={() => props.onToggleProject(node.name)}
               >
@@ -162,6 +165,7 @@ export function FileTreeNodes(props: {
                   </span>
                 </Show>
               </button>
+              </Tooltip>
               {renderChildren()}
             </Match>
           </Switch>

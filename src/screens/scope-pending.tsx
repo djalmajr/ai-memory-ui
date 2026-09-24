@@ -1,8 +1,10 @@
 import { useQuery } from "~/lib/query";
-import { For, Show, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { ConfirmDialog } from "~/components/confirm-dialog";
+import { DataGrid } from "~/components/data-grid";
 import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
@@ -41,6 +43,7 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
   const scope = () => ({ workspace: props.workspace, project: props.project });
   const [status, setStatus] = createSignal<ProposalStatus | "">("pending");
   const [limit, setLimit] = createSignal(50);
+  const [selected, setSelected] = createSignal<ProposalSummary | null>(null);
 
   const list$ = useQuery(() => ({
     enabled: isAdminTier(tier()),
@@ -72,6 +75,7 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
       scope={scope()}
       pendingCount={pendingCount$.data?.length}
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_pending())} />}
+      screen={t(() => m.nav_pending())}
     >
       <Show
         when={isAdminTier(tier())}
@@ -79,35 +83,6 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
           <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.pending_admin_only())} />
         }
       >
-        <div class="flex flex-wrap items-end gap-4">
-          <label class="flex flex-col gap-1.5 text-sm font-medium">
-            {t(() => m.pending_filter())}
-            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-              value={status()}
-              onChange={(event) => setStatus(event.currentTarget.value as ProposalStatus | "")}
-            >
-              <option value="">{t(() => m.pending_status_all())}</option>
-              <For each={[...STATUSES]}>
-                {(value) => <option value={value}>{statusLabel(value)}</option>}
-              </For>
-            </select>
-          </label>
-          <label class="flex flex-col gap-1.5 text-sm font-medium">
-            {t(() => m.pending_limit())}
-            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-              value={String(limit())}
-              onChange={(event) => setLimit(Number(event.currentTarget.value))}
-            >
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-          </label>
-          {/* O engine devolve um array puro, clamp 1..200, sem cursor. Onde
-              um paginator viveria, só esta nota — inventar cursor seria mentira. */}
-          <p class="text-xs text-muted-foreground">{t(() => m.pending_no_cursor())}</p>
-        </div>
-
         <Show when={list$.isPending}>
           <div class="flex flex-col gap-2">
             <Skeleton class="h-24 w-full rounded-md" />
@@ -118,27 +93,87 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
           <QueryError error={list$.error} onRetry={() => void list$.refetch()} />
         </Show>
         <Show when={!list$.isPending && !list$.isError}>
-          <Show
-            when={(list$.data ?? []).length > 0}
-            fallback={
-              <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.pending_empty())} />
-            }
-          >
-            <ul class="flex flex-col gap-4">
-              <For each={list$.data ?? []}>
-                {(proposal) => (
-                  <ProposalCard
-                    proposal={proposal}
-                    workspace={props.workspace}
-                    project={props.project}
-                    onSettled={() => {
-                      void list$.refetch();
-                      void pendingCount$.refetch();
-                    }}
-                  />
-                )}
-              </For>
-            </ul>
+          <DataGrid
+            empty={t(() => m.pending_empty())}
+            filters={[
+              {
+                label: t(() => m.pending_filter()),
+                onChange: (value) => {
+                  setStatus(value as ProposalStatus | "");
+                  setSelected(null);
+                },
+                options: [
+                  { label: t(() => m.pending_status_all()), value: "" },
+                  ...STATUSES.map((value) => ({ label: statusLabel(value), value })),
+                ],
+                value: status(),
+              },
+              {
+                label: t(() => m.pending_limit()),
+                onChange: (value) => setLimit(Number(value)),
+                options: [
+                  { label: "50", value: "50" },
+                  { label: "100", value: "100" },
+                  { label: "200", value: "200" },
+                ],
+                value: String(limit()),
+              },
+            ]}
+            items={list$.data ?? []}
+            pager={false}
+            tableClass="table-fixed"
+            onRow={setSelected}
+            columns={[
+              {
+                id: "title",
+                label: t(() => m.pending_col_title()),
+                search: (row) => `${row.title} ${row.target_path} ${row.kind}`,
+                sortValue: (row) => row.title,
+                cell: (row) => (
+                  <>
+                    <div class="truncate">{row.title}</div>
+                    <div class="truncate text-xs text-muted-foreground">{row.target_path}</div>
+                  </>
+                ),
+              },
+              {
+                id: "operation",
+                label: t(() => m.pending_col_operation()),
+                class: "w-28",
+                sortValue: (row) => row.operation,
+                cell: (row) => <Badge variant="outline">{opLabel(row.operation)}</Badge>,
+              },
+              {
+                id: "status",
+                label: t(() => m.pending_filter()),
+                class: "w-28",
+                sortValue: (row) => row.status,
+                cell: (row) => <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>,
+              },
+              {
+                id: "staged",
+                label: t(() => m.pending_col_staged()),
+                class: "w-40 tabular-nums",
+                sortValue: (row) => row.staged_at,
+                cell: (row) => formatDateTime(fromMicros(row.staged_at)),
+              },
+            ]}
+          />
+          {/* O engine devolve um array puro, clamp 1..200, sem cursor. */}
+          <p class="text-xs text-muted-foreground">{t(() => m.pending_no_cursor())}</p>
+          <Show when={selected()}>
+            {(proposal) => (
+              <ProposalCard
+                expanded
+                project={props.project}
+                proposal={proposal()}
+                workspace={props.workspace}
+                onSettled={() => {
+                  void list$.refetch();
+                  void pendingCount$.refetch();
+                }}
+              />
+            )}
           </Show>
         </Show>
       </Show>
@@ -147,14 +182,16 @@ export function ScopePendingScreen(props: { workspace: string; project: string }
 }
 
 function ProposalCard(props: {
+  expanded?: boolean;
   proposal: ProposalSummary;
   workspace: string;
   project: string;
   onSettled: () => void;
 }) {
   const scope = () => ({ workspace: props.workspace, project: props.project });
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(props.expanded ?? false);
   const [reason, setReason] = createSignal("");
+  const [ask, setAsk] = createSignal<"approve" | "reject" | "regen" | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [outcome, setOutcome] = createSignal<DecisionOutcome | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -194,8 +231,10 @@ function ProposalCard(props: {
       const result = await adminApprovePendingWrite(scope(), props.proposal.id);
       setOutcome(result);
       props.onSettled();
+      return true;
     } catch (error) {
       setActionError(mapActionError(error));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -208,8 +247,10 @@ function ProposalCard(props: {
       const result = await adminRejectPendingWrite(scope(), props.proposal.id, note);
       setOutcome(result);
       props.onSettled();
+      return true;
     } catch (error) {
       setActionError(mapActionError(error));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -229,10 +270,10 @@ function ProposalCard(props: {
           <Badge variant={statusVariant(props.proposal.status)}>
             {statusLabel(props.proposal.status)}
           </Badge>
-          <span class="font-mono text-xs text-muted-foreground">{props.proposal.kind}</span>
+          <span class="text-xs text-muted-foreground">{props.proposal.kind}</span>
         </div>
         <strong class="text-sm">{props.proposal.title}</strong>
-        <span class="font-mono text-xs text-muted-foreground">{props.proposal.target_path}</span>
+        <span class="text-xs text-muted-foreground">{props.proposal.target_path}</span>
         <span class="text-xs text-muted-foreground">
           {t(() => m.pending_confidence())} {props.proposal.confidence}
           {" · "}
@@ -264,7 +305,7 @@ function ProposalCard(props: {
               <div>
                 <h3 class="text-xs font-medium text-muted-foreground">{t(() => m.pending_body())}</h3>
                 <ScrollArea class="max-h-48 rounded-md border border-hairline bg-sidebar-bg">
-                  <pre class="whitespace-pre-wrap p-2 font-mono text-xs">{detail().body_markdown}</pre>
+                  <pre class="whitespace-pre-wrap p-2 text-sm">{detail().body_markdown}</pre>
                 </ScrollArea>
               </div>
             </div>
@@ -277,7 +318,7 @@ function ProposalCard(props: {
               {/* Formato caseiro do engine (`--- before` / `+++ after` / `--- proposed ---`),
                   não `diff -u`. Renderiza cru. */}
               <ScrollArea class="max-h-80 rounded-md border border-hairline bg-sidebar-bg">
-                <pre class="whitespace-pre-wrap p-2 font-mono text-xs">{diff().diff}</pre>
+                <pre class="whitespace-pre-wrap p-2 text-sm">{diff().diff}</pre>
               </ScrollArea>
             </div>
           )}
@@ -305,7 +346,7 @@ function ProposalCard(props: {
              
               variant="destructive"
               disabled={busy() || !canMutate(tier())}
-              onClick={() => void regenerate()}
+              onClick={() => setAsk("regen")}
             >
               {t(() => m.pending_conflict_regen())}
             </Button>
@@ -332,7 +373,7 @@ function ProposalCard(props: {
 
       <Show when={props.proposal.status === "pending" && !decided() && !isConflict()}>
         <div class="flex flex-wrap items-end gap-2">
-          <Button type="button" disabled={busy() || !canMutate(tier())} onClick={() => void approve()}>
+          <Button type="button" disabled={busy() || !canMutate(tier())} onClick={() => setAsk("approve")}>
             {t(() => m.pending_approve())}
           </Button>
           <label class="flex min-w-48 flex-1 flex-col gap-1.5 text-sm font-medium">
@@ -348,11 +389,31 @@ function ProposalCard(props: {
            
             variant="outline"
             disabled={busy() || !canMutate(tier())}
-            onClick={() => void reject(reason())}
+            onClick={() => setAsk("reject")}
           >
             {t(() => m.pending_reject())}
           </Button>
         </div>
+      </Show>
+      <Show when={ask()}>
+        {(kind) => (
+          <ConfirmDialog
+            body={t(() => (kind() === "approve" ? m.pending_approve_body() : m.pending_reject_body()))}
+            confirmLabel={t(() => (kind() === "approve" ? m.pending_approve() : m.pending_reject()))}
+            destructive={kind() !== "approve"}
+            error={actionError()}
+            pending={busy()}
+            title={t(() => (kind() === "approve" ? m.pending_approve() : m.pending_reject()))}
+            onClose={() => setAsk(null)}
+            onConfirm={() => {
+              const run =
+                kind() === "approve" ? approve() : kind() === "regen" ? regenerate() : reject(reason());
+              void run.then((ok) => {
+                if (ok) setAsk(null);
+              });
+            }}
+          />
+        )}
       </Show>
     </li>
   );

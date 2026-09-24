@@ -1,4 +1,5 @@
 import { useQuery } from "~/lib/query";
+import type { JSX } from "@solidjs/web";
 import { Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
@@ -7,6 +8,7 @@ import { DataGrid } from "~/components/data-grid";
 import { Filter } from "~/components/icons";
 import { Input } from "~/components/input";
 import { Content as PopoverContent, Portal as PopoverPortal, Root as PopoverRoot, Trigger as PopoverTrigger } from "~/components/popover";
+import { Select } from "~/components/select";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
@@ -15,6 +17,7 @@ import {
   adminAuditLog,
   adminCurator,
   adminLint,
+  adminProjects,
   type AuditEvent,
   type ScopeArgs,
 } from "~/lib/admin-api";
@@ -119,6 +122,7 @@ export function AuditScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_audit())}</span>}
+      screen={t(() => m.nav_audit())}
       description={<span>{t(() => m.audit_subtitle())}</span>}
     >
       <Tabs defaultValue="contamination">
@@ -205,13 +209,13 @@ function ContaminationBlock() {
             empty={t(() => m.audit_empty_contamination())}
             items={findings()}
             columns={[
-              { id: "check", label: t(() => m.audit_col_check()), class: "w-[140px] font-mono", search: (row) => `${row.check} ${row.entity_id}`, sortValue: (row) => row.check, cell: (row) => row.check },
+              { id: "check", label: t(() => m.audit_col_check()), class: "w-[140px]", search: (row) => `${row.check} ${row.entity_id}`, sortValue: (row) => row.check, cell: (row) => row.check },
               { id: "confidence", label: t(() => m.audit_col_confidence()), class: "w-[110px]", filter: { label: t(() => m.audit_col_confidence()), value: (row) => row.confidence }, sortValue: (row) => row.confidence, cell: (row) => row.confidence },
-              { id: "kind", label: t(() => m.audit_col_entity_kind()), class: "w-[120px] font-mono", sortValue: (row) => row.entity_kind, cell: (row) => row.entity_kind },
-              { id: "id", label: t(() => m.audit_col_entity_id()), class: "w-[180px] truncate font-mono", sortValue: (row) => row.entity_id, cell: (row) => row.entity_id },
-              { id: "ws", label: t(() => m.audit_col_landed_ws()), class: "w-[140px] font-mono", sortValue: (row) => row.landed_workspace, cell: (row) => row.landed_workspace },
-              { id: "proj", label: t(() => m.audit_col_landed_proj()), class: "w-[140px] font-mono", sortValue: (row) => row.landed_project, cell: (row) => row.landed_project },
-              { id: "expected", label: t(() => m.audit_col_expected()), class: "w-[140px] font-mono", cell: (row) => row.expected_project ?? DASH },
+              { id: "kind", label: t(() => m.audit_col_entity_kind()), class: "w-[120px]", sortValue: (row) => row.entity_kind, cell: (row) => row.entity_kind },
+              { id: "id", label: t(() => m.audit_col_entity_id()), class: "w-[180px] truncate", sortValue: (row) => row.entity_id, cell: (row) => row.entity_id },
+              { id: "ws", label: t(() => m.audit_col_landed_ws()), class: "w-[140px]", sortValue: (row) => row.landed_workspace, cell: (row) => row.landed_workspace },
+              { id: "proj", label: t(() => m.audit_col_landed_proj()), class: "w-[140px]", sortValue: (row) => row.landed_project, cell: (row) => row.landed_project },
+              { id: "expected", label: t(() => m.audit_col_expected()), class: "w-[140px]", cell: (row) => row.expected_project ?? DASH },
               { id: "cwd", label: t(() => m.audit_col_cwd()), class: "min-w-[160px] truncate font-mono", cell: (row) => row.cwd ?? DASH },
             ]}
           />
@@ -263,65 +267,41 @@ function ReportsBlock() {
     }
   };
 
+  const lintRows = () =>
+    (lintReport()?.findings ?? []).map((finding) => ({
+      kind: finding.kind,
+      severity: finding.severity,
+      message: finding.message,
+      pages: finding.pages,
+      detail: finding.detail,
+    }));
+
   return (
     <section class="flex flex-col gap-4">
-      <div class="flex flex-wrap items-end gap-2">
-        <label class="flex min-w-[160px] flex-col gap-1.5 text-sm font-medium">
-          {t(() => m.audit_scope_workspace())}
-          <Input
-            value={workspace()}
-            onInput={(event) => setWorkspace(event.currentTarget.value)}
-          />
-        </label>
-        <label class="flex min-w-[160px] flex-col gap-1.5 text-sm font-medium">
-          {t(() => m.audit_scope_project())}
-          <Input
-            value={project()}
-            onInput={(event) => setProject(event.currentTarget.value)}
-          />
-        </label>
-        <Button type="button" disabled={lintPending()} onClick={() => void runLint()}>
-          {t(() => m.audit_lint_run())}
-        </Button>
-        <Button
-         
-          type="button"
-          variant="outline"
-          disabled={curatorPending()}
-          onClick={() => void runCurator()}
-        >
-          {t(() => m.audit_curator_run())}
-        </Button>
-      </div>
-
-      <Show when={lintPending()}>
-        <LoadingBlock />
-      </Show>
       <Show when={lintError()}>
         {(message) => <ErrorBlock message={message()} onRetry={() => void runLint()} />}
       </Show>
-      <Show when={!lintPending() && !lintError() && lintReport()}>
-        {(report) => (
-          <FindingsTable
-            empty={t(() => m.audit_empty_lint())}
-            rows={report().findings.map((finding) => ({
-              kind: finding.kind,
-              severity: finding.severity,
-              message: finding.message,
-              pages: finding.pages,
-              detail: finding.detail,
-            }))}
+      <FindingsTable
+        beforeSort={
+          <ReportRun
+            curatorPending={curatorPending()}
+            project={project()}
+            workspace={workspace()}
+            lintPending={lintPending()}
+            onCurator={() => void runCurator()}
+            onLint={() => void runLint()}
+            onProject={setProject}
+            onWorkspace={setWorkspace}
           />
-        )}
-      </Show>
+        }
+        empty={lintReport() ? t(() => m.audit_empty_lint()) : t(() => m.audit_empty_reports())}
+        rows={lintRows()}
+      />
 
-      <Show when={curatorPending()}>
-        <LoadingBlock />
-      </Show>
       <Show when={curatorError()}>
         {(message) => <ErrorBlock message={message()} onRetry={() => void runCurator()} />}
       </Show>
-      <Show when={!curatorPending() && !curatorError() && curatorReport()}>
+      <Show when={curatorReport()}>
         {(report) => (
           <div class="flex flex-col gap-2">
             <p class="text-sm">{report().summary}</p>
@@ -343,6 +323,118 @@ function ReportsBlock() {
         )}
       </Show>
     </section>
+  );
+}
+
+function ScopeSelect(props: {
+  disabled?: boolean;
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label class="flex flex-col gap-1.5 text-sm font-medium">
+      {props.label}
+      <Select
+        disabled={props.disabled || props.options.length === 0}
+        options={props.options.map((option) => ({ label: option, value: option }))}
+        value={props.value}
+        onChange={props.onChange}
+      />
+    </label>
+  );
+}
+
+function ReportRun(props: {
+  curatorPending: boolean;
+  lintPending: boolean;
+  project: string;
+  workspace: string;
+  onCurator: () => void;
+  onLint: () => void;
+  onProject: (value: string) => void;
+  onWorkspace: (value: string) => void;
+}) {
+  const [open, setOpen] = createSignal(false);
+  const catalogQ = useQuery(() => ({
+    queryKey: ["admin", "projects"],
+    queryFn: adminProjects,
+  }));
+  const catalog = () => catalogQ.data ?? [];
+  const withCurrent = (names: string[], current: string) =>
+    current && !names.includes(current) ? [current, ...names] : names;
+  const workspaceOptions = () =>
+    withCurrent(
+      [...new Set(catalog().map((row) => row.workspace_name))].sort((a, b) => a.localeCompare(b)),
+      props.workspace,
+    );
+  const projectOptions = () =>
+    withCurrent(
+      catalog()
+        .filter((row) => row.workspace_name === props.workspace)
+        .map((row) => row.project_name)
+        .sort((a, b) => a.localeCompare(b)),
+      props.project,
+    );
+  const chooseWorkspace = (workspace: string) => {
+    props.onWorkspace(workspace);
+    const projects = catalog()
+      .filter((row) => row.workspace_name === workspace)
+      .map((row) => row.project_name)
+      .sort((a, b) => a.localeCompare(b));
+    if (projects.length > 0 && !projects.includes(props.project)) props.onProject(projects[0]);
+  };
+  return (
+    <PopoverRoot gutter={4} open={open()} placement="bottom-end" onOpenChange={setOpen}>
+      <PopoverTrigger class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-normal hover:bg-muted">
+        {t(() => m.audit_reports_action())}
+      </PopoverTrigger>
+      <PopoverPortal>
+        <PopoverContent class="w-80">
+          <div class="flex flex-col gap-3">
+            <p class="text-sm font-medium">{t(() => m.audit_reports_action())}</p>
+            <ScopeSelect
+              disabled={catalogQ.isPending}
+              label={t(() => m.audit_scope_workspace())}
+              options={workspaceOptions()}
+              value={props.workspace}
+              onChange={chooseWorkspace}
+            />
+            <ScopeSelect
+              disabled={catalogQ.isPending}
+              label={t(() => m.audit_scope_project())}
+              options={projectOptions()}
+              value={props.project}
+              onChange={props.onProject}
+            />
+            <div class="flex gap-2">
+              <Button
+                disabled={props.lintPending}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  props.onLint();
+                }}
+              >
+                {t(() => m.audit_lint_run())}
+              </Button>
+              <Button
+                disabled={props.curatorPending}
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                  props.onCurator();
+                }}
+              >
+                {t(() => m.audit_curator_run())}
+              </Button>
+            </div>
+          </div>
+        </PopoverContent>
+      </PopoverPortal>
+    </PopoverRoot>
   );
 }
 
@@ -383,9 +475,9 @@ function LogTable(props: { empty: string; events: AuditEvent[] }) {
       items={props.events}
       columns={[
         { id: "at", label: t(() => m.audit_col_at()), class: "w-[160px] tabular-nums", sortValue: (event) => event.at, cell: (event) => formatDateTime(fromMicros(event.at)) },
-        { id: "op", label: t(() => m.audit_col_op()), class: "w-[140px] font-mono", search: (event) => `${event.op} ${event.page_path ?? ""}`, filter: { label: t(() => m.audit_col_op()), value: (event) => event.op }, sortValue: (event) => event.op, cell: (event) => event.op },
-        { id: "workspace", label: t(() => m.audit_col_workspace()), class: "w-[140px] font-mono", cell: (event) => event.workspace ?? DASH },
-        { id: "project", label: t(() => m.audit_col_project()), class: "w-[140px] font-mono", cell: (event) => event.project ?? DASH },
+        { id: "op", label: t(() => m.audit_col_op()), class: "w-[140px]", search: (event) => `${event.op} ${event.page_path ?? ""}`, filter: { label: t(() => m.audit_col_op()), value: (event) => event.op }, sortValue: (event) => event.op, cell: (event) => event.op },
+        { id: "workspace", label: t(() => m.audit_col_workspace()), class: "w-[140px]", cell: (event) => event.workspace ?? DASH },
+        { id: "project", label: t(() => m.audit_col_project()), class: "w-[140px]", cell: (event) => event.project ?? DASH },
         { id: "page", label: t(() => m.audit_col_page()), class: "min-w-[180px] truncate font-mono", cell: (event) => event.page_path ?? DASH },
         { id: "author", label: t(() => m.audit_col_author()), class: "w-[140px]", sortValue: (event) => event.author_username ?? "", cell: (event) => event.author_username ?? DASH },
       ]}
@@ -394,15 +486,17 @@ function LogTable(props: { empty: string; events: AuditEvent[] }) {
 }
 
 function FindingsTable(props: {
+  beforeSort?: JSX.Element;
   empty: string;
   rows: { kind: string; severity: string; message: string; pages: string[]; detail: string | null }[];
 }) {
   return (
     <DataGrid
+      beforeSort={props.beforeSort}
       empty={props.empty}
       items={props.rows}
       columns={[
-        { id: "kind", label: t(() => m.audit_col_kind()), class: "w-[120px] font-mono", search: (row) => row.message, sortValue: (row) => row.kind, cell: (row) => row.kind },
+        { id: "kind", label: t(() => m.audit_col_kind()), class: "w-[120px]", search: (row) => row.message, sortValue: (row) => row.kind, cell: (row) => row.kind },
         { id: "severity", label: t(() => m.audit_col_severity()), class: "w-[110px]", filter: { label: t(() => m.audit_col_severity()), value: (row) => row.severity }, sortValue: (row) => row.severity, cell: (row) => <Badge variant={severityVariant(row.severity)}>{row.severity}</Badge> },
         { id: "message", label: t(() => m.audit_col_message()), class: "min-w-[200px]", cell: (row) => (<><span>{row.message}</span><Show when={row.detail}>{(detail) => <span class="mt-1 block text-xs text-muted-foreground">{detail()}</span>}</Show></>) },
         { id: "pages", label: t(() => m.audit_col_pages()), class: "w-[220px] font-mono text-xs", cell: (row) => (row.pages.length > 0 ? row.pages.join(", ") : DASH) },

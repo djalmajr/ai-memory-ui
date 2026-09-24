@@ -2,14 +2,18 @@ import { useQuery } from "~/lib/query";
 import { For, Show, createEffect, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { Checkbox } from "~/components/checkbox";
+import { ConfirmDialog } from "~/components/confirm-dialog";
+import { Tooltip } from "~/components/tooltip";
 import { DataGrid } from "~/components/data-grid";
+import { ChevronLeft, ChevronRight, X } from "~/components/icons";
 import { Input } from "~/components/input";
+import { Select } from "~/components/select";
 import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
-import { adminMoveSession, adminOpenSessions, adminPendingWrites, adminPurgeSession } from "~/lib/admin-api";
-import { AGENT_KINDS } from "~/lib/admin-types";
+import { adminMoveSession, adminPendingWrites, adminPurgeSession } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
 import { canMutate, isAdminTier, tier } from "~/lib/auth";
 import { formatDateTime, fromRfc3339 } from "~/lib/datetime";
@@ -34,7 +38,6 @@ export function ScopeSessionsScreen(props: { workspace: string; project: string 
   const [offset, setOffset] = createSignal(0);
   const [limit, setLimit] = createSignal(20);
   const [selected, setSelected] = createSignal<SessionSummary | null>(null);
-  const [openAgent, setOpenAgent] = createSignal("");
 
   const pending$ = useQuery(() => ({
     enabled: isAdminTier(tier()),
@@ -52,55 +55,11 @@ export function ScopeSessionsScreen(props: { workspace: string; project: string 
     queryKey: ["api", "sessions", props.workspace, props.project, includeOpen(), limit(), offset()],
   }));
 
-  const open$ = useQuery(() => {
-    const agent = openAgent();
-    return {
-      enabled: isAdminTier(tier()) && agent.length > 0,
-      queryFn: () => adminOpenSessions(scope(), agent, true),
-      queryKey: ["admin", "open-sessions", props.workspace, props.project, agent],
-    };
-  });
-
   const rows = () => list$.data?.sessions ?? [];
   const page = () => Math.floor(offset() / limit()) + 1;
 
-  return (
-    <Shell
-      description={<span>{t(() => m.sessions_scope_subtitle())}</span>}
-      level="scope"
-      scope={scope()}
-      pendingCount={pending$.data?.length}
-      heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.sessions_title())} />}
-    >
-      <div class="flex flex-wrap items-end gap-4">
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            class="size-4 accent-primary"
-            checked={includeOpen()}
-            onChange={(event) => {
-              setIncludeOpen(event.currentTarget.checked);
-              setOffset(0);
-            }}
-          />
-          {t(() => m.sessions_include_open())}
-        </label>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          {t(() => m.sessions_limit())}
-          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-            value={String(limit())}
-            onChange={(event) => {
-              setLimit(Number(event.currentTarget.value));
-              setOffset(0);
-            }}
-          >
-            <option value="20">20</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
-        </label>
-      </div>
-
+  const RecordedSessions = () => (
+    <>
       <Show when={list$.isPending}>
         <div class="flex flex-col gap-2">
           <Skeleton class="h-4 w-1/2 rounded-md" />
@@ -111,132 +70,127 @@ export function ScopeSessionsScreen(props: { workspace: string; project: string 
         <QueryError error={list$.error} onRetry={() => void list$.refetch()} />
       </Show>
       <Show when={!list$.isPending && !list$.isError}>
-        <DataGrid
-          empty={t(() => m.sessions_empty())}
-          items={rows()}
-          pager={false}
-          tableClass="table-fixed"
-          onRow={setSelected}
-          columns={[
-            {
-              id: "id",
-              label: t(() => m.sessions_col_id()),
-              class: "w-28 truncate font-mono text-xs",
-              search: (row) => row.session_id,
-              sortValue: (row) => row.session_id,
-              cell: (row) => row.session_id.slice(0, 8),
-            },
-            {
-              id: "agent",
-              label: t(() => m.sessions_col_agent()),
-              class: "w-32 truncate",
-              filter: { label: t(() => m.sessions_col_agent()), value: (row) => row.agent_kind },
-              sortValue: (row) => row.agent_kind,
-              cell: (row) => row.agent_kind,
-            },
-            {
-              id: "started",
-              label: t(() => m.sessions_col_started()),
-              class: "w-40 tabular-nums",
-              sortValue: (row) => row.started_at,
-              cell: (row) => formatDateTime(fromRfc3339(row.started_at)),
-            },
-            {
-              id: "ended",
-              label: t(() => m.sessions_col_ended()),
-              class: "w-40 tabular-nums",
-              sortValue: (row) => row.ended_at ?? "",
-              cell: (row) => (row.ended_at ? formatDateTime(fromRfc3339(row.ended_at)) : t(() => m.sessions_open())),
-            },
-            {
-              id: "observations",
-              label: t(() => m.sessions_col_observations()),
-              class: "w-24 tabular-nums",
-              sortValue: (row) => row.observation_count,
-              cell: (row) => row.observation_count,
-            },
-            {
-              id: "owner",
-              label: t(() => m.sessions_col_owner()),
-              class: "w-32 truncate font-mono text-xs",
-              sortValue: (row) => row.actor_user ?? "",
-              cell: (row) => labelIdentityKey(row.actor_user),
-            },
-          ]}
-        />
-          <div class="flex items-center gap-2">
+        <div class="flex flex-col gap-2">
+          <DataGrid
+            empty={t(() => m.sessions_empty())}
+            filters={[
+              {
+                label: t(() => m.sessions_limit()),
+                onChange: (value) => {
+                  setLimit(Number(value));
+                  setOffset(0);
+                },
+                options: [
+                  { label: "20", value: "20" },
+                  { label: "50", value: "50" },
+                  { label: "100", value: "100" },
+                ],
+                value: String(limit()),
+              },
+            ]}
+            items={rows()}
+            leading={
+              <label class="flex h-8 items-center gap-2 text-sm">
+                <Checkbox
+                  checked={includeOpen()}
+                  onChange={(checked) => {
+                    setIncludeOpen(checked);
+                    setOffset(0);
+                  }}
+                />
+                {t(() => m.sessions_include_open())}
+              </label>
+            }
+            pager={false}
+            tableClass="table-fixed"
+            onRow={setSelected}
+            columns={[
+              {
+                id: "id",
+                label: t(() => m.sessions_col_id()),
+                class: "w-28 truncate text-xs",
+                search: (row) => row.session_id,
+                sortValue: (row) => row.session_id,
+                cell: (row) => row.session_id.slice(0, 8),
+              },
+              {
+                id: "agent",
+                label: t(() => m.sessions_col_agent()),
+                class: "w-32 truncate",
+                filter: { label: t(() => m.sessions_col_agent()), value: (row) => row.agent_kind },
+                sortValue: (row) => row.agent_kind,
+                cell: (row) => row.agent_kind,
+              },
+              {
+                id: "started",
+                label: t(() => m.sessions_col_started()),
+                class: "w-40 tabular-nums",
+                sortValue: (row) => row.started_at,
+                cell: (row) => formatDateTime(fromRfc3339(row.started_at)),
+              },
+              {
+                id: "ended",
+                label: t(() => m.sessions_col_ended()),
+                class: "w-40 tabular-nums",
+                sortValue: (row) => row.ended_at ?? "",
+                cell: (row) => (row.ended_at ? formatDateTime(fromRfc3339(row.ended_at)) : t(() => m.sessions_open())),
+              },
+              {
+                id: "observations",
+                label: t(() => m.sessions_col_observations()),
+                class: "w-24 tabular-nums",
+                sortValue: (row) => row.observation_count,
+                cell: (row) => row.observation_count,
+              },
+              {
+                id: "owner",
+                label: t(() => m.sessions_col_owner()),
+                class: "w-32 truncate text-xs",
+                sortValue: (row) => row.actor_user ?? "",
+                cell: (row) => labelIdentityKey(row.actor_user),
+              },
+            ]}
+          />
+          <div class="flex w-full flex-wrap items-center justify-end gap-3 p-1">
+            <div class="mr-auto self-start text-sm text-muted-foreground">
+              {t(() => m.sessions_page({ n: page() }))}
+            </div>
             <Button
-              type="button"
-             
-              variant="outline"
+              aria-label={t(() => m.sessions_prev())}
               disabled={offset() === 0}
+              size="icon"
+              type="button"
+              variant="outline"
               onClick={() => setOffset((value) => Math.max(0, value - limit()))}
             >
-              {t(() => m.sessions_prev())}
+              <ChevronLeft />
             </Button>
-            <span class="text-xs text-muted-foreground">
-              {t(() => m.sessions_page({ n: page() }))}
-            </span>
             <Button
-              type="button"
-             
-              variant="outline"
+              aria-label={t(() => m.sessions_next())}
               disabled={rows().length < limit()}
+              size="icon"
+              type="button"
+              variant="outline"
               onClick={() => setOffset((value) => value + limit())}
             >
-              {t(() => m.sessions_next())}
+              <ChevronRight />
             </Button>
           </div>
+        </div>
       </Show>
+    </>
+  );
 
-      {/* GET /admin/open-sessions exige agent exato (AgentKind::as_str). Aliases
-          como `claude` / `opencode` o engine recusa com 400 — o seletor só
-          oferece a lista canônica. Não existe lista aberta server-wide. */}
-      <Show when={isAdminTier(tier())}>
-        <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
-          <h2 class="text-sm font-medium">{t(() => m.sessions_open_admin())}</h2>
-          <p class="text-xs text-muted-foreground">{t(() => m.sessions_open_hint())}</p>
-          <label class="flex max-w-xs flex-col gap-1.5 text-sm font-medium">
-            {t(() => m.sessions_open_agent())}
-            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-              value={openAgent()}
-              onChange={(event) => setOpenAgent(event.currentTarget.value)}
-            >
-              <option value="">{t(() => m.sessions_open_pick())}</option>
-              <For each={[...AGENT_KINDS]}>
-                {(kind) => <option value={kind}>{kind}</option>}
-              </For>
-            </select>
-          </label>
-          <Show when={open$.isError}>
-            <QueryError error={open$.error} onRetry={() => void open$.refetch()} />
-          </Show>
-          <Show when={openAgent() && !open$.isPending && !open$.isError}>
-            <Show
-              when={(open$.data ?? []).length > 0}
-              fallback={
-                <EmptyState
-                  title={t(() => m.state_empty_title())}
-                  body={t(() => m.sessions_open_empty())}
-                />
-              }
-            >
-              <ul class="flex flex-col gap-1 text-sm">
-                <For each={open$.data ?? []}>
-                  {(entry) => (
-                    <li class="flex gap-4 font-mono text-xs">
-                      <span title={entry.session_id}>{entry.session_id.slice(0, 8)}</span>
-                      <span class="truncate text-muted-foreground" title={entry.cwd ?? ""}>
-                        {entry.cwd ?? "—"}
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </Show>
-        </section>
-      </Show>
+  return (
+    <Shell
+      description={<span>{t(() => m.sessions_scope_subtitle())}</span>}
+      level="scope"
+      scope={scope()}
+      pendingCount={pending$.data?.length}
+      heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_sessions())} />}
+      screen={t(() => m.nav_sessions())}
+    >
+      <RecordedSessions />
 
       <Show when={selected()}>
         {(session) => (
@@ -258,7 +212,8 @@ function SessionOps(props: {
   sessionId: string;
   workspace: string;
 }) {
-  const [purgeArmed, setPurgeArmed] = createSignal(false);
+  const [purgeOpen, setPurgeOpen] = createSignal(false);
+  const [moveOpen, setMoveOpen] = createSignal(false);
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [destWorkspace, setDestWorkspace] = createSignal("");
@@ -285,8 +240,10 @@ function SessionOps(props: {
         props.sessionId,
       );
       props.onPurged();
+      return true;
     } catch (caught) {
       fail(caught);
+      return false;
     } finally {
       setPending(false);
     }
@@ -306,8 +263,10 @@ function SessionOps(props: {
           workspace: destWorkspace().trim() || undefined,
         }),
       );
+      return true;
     } catch (caught) {
       fail(caught);
+      return false;
     } finally {
       setPending(false);
     }
@@ -316,18 +275,9 @@ function SessionOps(props: {
   return (
     <section class="flex flex-col gap-2 rounded-lg border border-hairline p-3">
       <div class="flex flex-wrap gap-2">
-        <Show
-          when={purgeArmed()}
-          fallback={
-            <Button type="button" variant="outline" onClick={() => setPurgeArmed(true)}>
-              {t(() => m.sessions_purge())}
-            </Button>
-          }
-        >
-          <Button disabled={pending()} type="button" onClick={() => void purge()}>
-            {t(() => m.sessions_purge_confirm())}
-          </Button>
-        </Show>
+        <Button type="button" variant="outline" onClick={() => setPurgeOpen(true)}>
+          {t(() => m.sessions_purge())}
+        </Button>
       </div>
       <p class="text-xs font-medium">{t(() => m.sessions_move())}</p>
       <Input
@@ -344,10 +294,37 @@ function SessionOps(props: {
         <Button disabled={pending() || destProject().trim().length === 0} type="button" variant="outline" onClick={() => void move(false)}>
           {t(() => m.sessions_move_preview())}
         </Button>
-        <Button disabled={pending() || destProject().trim().length === 0} type="button" onClick={() => void move(true)}>
+        <Button disabled={pending() || destProject().trim().length === 0} type="button" onClick={() => setMoveOpen(true)}>
           {t(() => m.sessions_move_confirm())}
         </Button>
       </div>
+      <Show when={purgeOpen()}>
+        <ConfirmDialog
+          body={t(() => m.sessions_purge_confirm())}
+          confirmLabel={t(() => m.sessions_purge())}
+          destructive
+          error={error()}
+          pending={pending()}
+          title={t(() => m.sessions_purge())}
+          onClose={() => setPurgeOpen(false)}
+          onConfirm={() => void purge().then((ok) => { if (ok) setPurgeOpen(false); })}
+        />
+      </Show>
+      <Show when={moveOpen()}>
+        <ConfirmDialog
+          body={t(() =>
+            m.sessions_move_confirm_body({
+              dest: `${destWorkspace().trim() || props.workspace}/${destProject().trim()}`,
+            }),
+          )}
+          confirmLabel={t(() => m.sessions_move_confirm())}
+          error={error()}
+          pending={pending()}
+          title={t(() => m.sessions_move())}
+          onClose={() => setMoveOpen(false)}
+          onConfirm={() => void move(true).then((ok) => { if (ok) setMoveOpen(false); })}
+        />
+      </Show>
       <Show when={error()}>
         {(message) => (
           <p class="text-sm text-destructive" role="alert">
@@ -357,7 +334,7 @@ function SessionOps(props: {
       </Show>
       <Show when={moveReport() !== null}>
         <ScrollArea class="max-h-80">
-          <pre class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(moveReport(), null, 2)}</pre>
+          <pre class="whitespace-pre-wrap text-sm">{JSON.stringify(moveReport(), null, 2)}</pre>
         </ScrollArea>
       </Show>
     </section>
@@ -413,12 +390,14 @@ function ObservationsDrawer(props: {
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">
             <h2 class="text-sm font-medium">{t(() => m.sessions_drawer_title())}</h2>
-            <p class="truncate font-mono text-xs text-muted-foreground" title={props.session.session_id}>
+            <Tooltip class="block min-w-0" content={props.session.session_id}>
+            <p class="truncate text-xs text-muted-foreground">
               {props.session.session_id}
             </p>
+            </Tooltip>
           </div>
-          <Button type="button" variant="ghost" onClick={props.onClose}>
-            {t(() => m.sessions_close())}
+          <Button aria-label={t(() => m.sessions_close())} size="icon" type="button" variant="ghost" onClick={props.onClose}>
+            <X size={16} />
           </Button>
         </div>
 
@@ -434,25 +413,27 @@ function ObservationsDrawer(props: {
         <div class="flex flex-wrap items-end gap-2">
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             {t(() => m.sessions_order())}
-            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+            <Select
+              class="w-40"
+              options={[
+                { label: t(() => m.sessions_order_asc()), value: "asc" },
+                { label: t(() => m.sessions_order_desc()), value: "desc" },
+              ]}
               value={order()}
-              onChange={(event) => setOrder(event.currentTarget.value as ObservationOrder)}
-            >
-              <option value="asc">{t(() => m.sessions_order_asc())}</option>
-              <option value="desc">{t(() => m.sessions_order_desc())}</option>
-            </select>
+              onChange={(value) => setOrder(value as ObservationOrder)}
+            />
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             {t(() => m.sessions_kind())}
-            <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+            <Select
+              class="w-44"
+              options={[
+                { label: t(() => m.sessions_kind_all()), value: "" },
+                ...OBSERVATION_KINDS.map((value) => ({ label: value, value })),
+              ]}
               value={kind()}
-              onChange={(event) => setKind(event.currentTarget.value)}
-            >
-              <option value="">{t(() => m.sessions_kind_all())}</option>
-              <For each={[...OBSERVATION_KINDS]}>
-                {(value) => <option value={value}>{value}</option>}
-              </For>
-            </select>
+              onChange={setKind}
+            />
           </label>
           <Input class="max-w-48"
             value={q()}
@@ -501,7 +482,7 @@ function ObservationsDrawer(props: {
                         <strong class="text-sm">{item.title}</strong>
                         {/* Sufixo `[body truncated; N chars omitted]` vem do engine
                             e precisa permanecer visível — não recortar de novo. */}
-                        <pre class="whitespace-pre-wrap font-mono text-xs">{item.body}</pre>
+                        <pre class="whitespace-pre-wrap text-sm">{item.body}</pre>
                       </li>
                     )}
                   </For>

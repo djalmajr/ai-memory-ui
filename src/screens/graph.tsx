@@ -1,9 +1,10 @@
 import { useQuery } from "~/lib/query";
 import { Link, useNavigate } from "@tanstack/solid-router";
-import { ArrowRight, CircleHelp } from "~/components/icons";
+import { CircleHelp } from "~/components/icons";
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { DataGrid } from "~/components/data-grid";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
@@ -35,8 +36,6 @@ export interface ProjectLink {
 
 const WIDTH = 640;
 const NODE_R = 30;
-// Teto de linhas page-level renderizadas — o endpoint não pagina.
-const LIST_LIMIT = 100;
 
 // Separador estrutural das chaves de par: NUL não aparece em nomes de
 // workspace/projeto. O componente anterior concatenava sem separador e
@@ -51,7 +50,7 @@ function GraphHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.graph_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -71,6 +70,27 @@ function GraphHelp() {
         <p>{t(() => m.graph_subtitle())}</p>
       </div>
     </div>
+  );
+}
+
+function edgeLabel(edge: CrossProjectEdge, side: "from" | "to"): string {
+  return side === "from"
+    ? `${edge.from_workspace}/${edge.from_project}/${edge.from_path}`
+    : `${edge.to_workspace}/${edge.to_project}/${edge.to_path}`;
+}
+
+function EdgeLink(props: { edge: CrossProjectEdge; side: "from" | "to" }) {
+  const workspace = () => (props.side === "from" ? props.edge.from_workspace : props.edge.to_workspace);
+  const project = () => (props.side === "from" ? props.edge.from_project : props.edge.to_project);
+  const path = () => (props.side === "from" ? props.edge.from_path : props.edge.to_path);
+  return (
+    <Link
+      class="block truncate font-mono text-xs text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
+      params={{ _splat: path(), project: project(), workspace: workspace() }}
+      to="/s/$workspace/$project/pages/$"
+    >
+      {edgeLabel(props.edge, props.side)}
+    </Link>
   );
 }
 
@@ -165,23 +185,9 @@ export function GraphScreen() {
     queryKey: ["graph"],
   }));
 
-  const [filter, setFilter] = createSignal("");
   const model = createMemo(() => layout(graphQ.data?.edges ?? []));
   const nodeOf = createMemo(() => new Map(model().nodes.map((node) => [node.key, node])));
   const reverse = createMemo(() => new Set(model().links.map((link) => `${link.to}${KEY_SEP}${link.from}`)));
-  // O /api/v1/graph não pagina; a lista page-level é filtrada no cliente e
-  // limitada a LIST_LIMIT linhas para o DOM não escalar com o grafo real.
-  const filteredEdges = createMemo(() => {
-    const needle = filter().trim().toLowerCase();
-    const edges = graphQ.data?.edges ?? [];
-    if (needle.length === 0) return edges;
-    return edges.filter((edge) =>
-      `${edge.from_workspace}/${edge.from_project}/${edge.from_path} ${edge.to_workspace}/${edge.to_project}/${edge.to_path}`
-        .toLowerCase()
-        .includes(needle),
-    );
-  });
-  const visibleEdges = createMemo(() => filteredEdges().slice(0, LIST_LIMIT));
   const goToProject = (node: ProjectNode) =>
     navigate({
       params: { project: node.project, workspace: node.workspace },
@@ -192,6 +198,8 @@ export function GraphScreen() {
     <Shell
       description={<span>{t(() => m.graph_subtitle())}</span>}
       heading={<span>{t(() => m.nav_graph())}</span>}
+      screen={t(() => m.nav_graph())}
+      help={<GraphHelp />}
       level="server"
     >
       <Show
@@ -233,10 +241,6 @@ export function GraphScreen() {
                     {t(() => m.graph_links_title({ count: data().edges.length }))}
                   </TabsTrigger>
                 </TabsList>
-                <GraphHelp />
-                <span class="ml-auto text-xs text-muted-foreground">
-                  {t(() => m.graph_stats({ links: data().edges.length, projects: model().nodes.length }))}
-                </span>
               </div>
               <TabsContent value="map" class="flex flex-col gap-1.5">
               <div class="rounded-lg border border-hairline p-4">
@@ -329,52 +333,38 @@ export function GraphScreen() {
                   </For>
                 </svg>
               </div>
+              <p class="text-right text-xs text-muted-foreground">
+                {t(() => m.graph_stats({ links: data().edges.length, projects: model().nodes.length }))}
+              </p>
               </TabsContent>
 
               <TabsContent value="links" class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-end gap-3">
-                <input
-                  aria-label={t(() => m.graph_filter_placeholder())}
-                  class="w-64 rounded-md border border-hairline bg-background px-2.5 py-1.5 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-primary max-md:w-full"
-                  placeholder={t(() => m.graph_filter_placeholder())}
-                  type="search"
-                  value={filter()}
-                  onInput={(event) => setFilter(event.currentTarget.value)}
+                <DataGrid
+                  empty={t(() => m.graph_filter_no_match())}
+                  items={data().edges}
+                  searchPlaceholder={t(() => m.graph_filter_placeholder())}
+                  columns={[
+                    {
+                      id: "from",
+                      label: t(() => m.graph_col_from()),
+                      class: "max-w-md truncate font-mono text-xs",
+                      search: (edge) => edgeLabel(edge, "from"),
+                      sortValue: (edge) => edgeLabel(edge, "from"),
+                      cell: (edge) => <EdgeLink edge={edge} side="from" />,
+                    },
+                    {
+                      id: "to",
+                      label: t(() => m.graph_col_to()),
+                      class: "max-w-md truncate font-mono text-xs",
+                      search: (edge) => edgeLabel(edge, "to"),
+                      sortValue: (edge) => edgeLabel(edge, "to"),
+                      cell: (edge) => <EdgeLink edge={edge} side="to" />,
+                    },
+                  ]}
                 />
-              </div>
-              <div class="flex flex-col rounded-lg border border-hairline">
-                <For each={visibleEdges()}>
-                  {(edge) => (
-                    <div class="flex items-center gap-2.5 border-hairline px-3.5 py-2.5 not-last:border-b">
-                      <Link
-                        class="min-w-0 flex-1 truncate font-mono text-xs text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                        params={{ _splat: edge.from_path, project: edge.from_project, workspace: edge.from_workspace }}
-                        to="/s/$workspace/$project/pages/$"
-                      >
-                        {edge.from_workspace}/{edge.from_project}/{edge.from_path}
-                      </Link>
-                      <ArrowRight aria-hidden="true" class="shrink-0 text-muted-foreground" size={14} />
-                      <Link
-                        class="min-w-0 flex-1 truncate font-mono text-xs text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                        params={{ _splat: edge.to_path, project: edge.to_project, workspace: edge.to_workspace }}
-                        to="/s/$workspace/$project/pages/$"
-                      >
-                        {edge.to_workspace}/{edge.to_project}/{edge.to_path}
-                      </Link>
-                    </div>
-                  )}
-                </For>
-                <Show when={filteredEdges().length === 0}>
-                  <EmptyState body={t(() => m.graph_filter_no_match())} title={t(() => m.state_empty_title())} />
-                </Show>
-                <Show when={filteredEdges().length > LIST_LIMIT}>
-                  <div class="border-t border-hairline px-3.5 py-2.5 text-xs text-muted-foreground">
-                    {t(() =>
-                      m.graph_list_truncated({ shown: LIST_LIMIT, total: filteredEdges().length }),
-                    )}
-                  </div>
-                </Show>
-              </div>
+                <p class="text-right text-xs text-muted-foreground">
+                  {t(() => m.graph_stats({ links: data().edges.length, projects: model().nodes.length }))}
+                </p>
               </TabsContent>
             </Tabs>
           </Show>

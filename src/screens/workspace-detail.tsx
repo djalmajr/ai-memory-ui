@@ -1,17 +1,21 @@
 import { useQuery } from "~/lib/query";
 import { Link } from "@tanstack/solid-router";
-import { For, Show, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
-import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { ArrowRightLeft, Pencil, Trash2 } from "~/components/icons";
+import { Tooltip } from "~/components/tooltip";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { DataGrid } from "~/components/data-grid";
 import { Checkbox } from "~/components/checkbox";
 import { Input } from "~/components/input";
+import { Select } from "~/components/select";
 import { HandoffCard } from "~/components/overview";
 import { Shell } from "~/components/shell";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
 import { Skeleton } from "~/components/skeleton";
-import { Metric } from "~/components/ui-bits";
+import { StatCell, StatStrip } from "~/components/stat-strip";
 import {
   adminDeleteWorkspace,
   adminMergeWorkspace,
@@ -46,33 +50,34 @@ function TypedConfirm(props: {
   error: string | null;
   label: string;
   pending: boolean;
-  target: string;
   variant?: "default" | "destructive";
   onConfirm: () => void;
 }) {
-  const [typed, setTyped] = createSignal("");
-  const ready = () => typed() === props.target && !props.pending && !props.disabled;
+  const [ask, setAsk] = createSignal(false);
   return (
     <div class="flex flex-col gap-2">
       {props.children}
-      <label class="flex flex-col gap-1.5 text-sm font-medium">
-        {t(() => m.workspaces_confirm_name({ name: props.target }))}
-        <Input class="font-mono"
-          disabled={props.pending}
-          onInput={(event) => setTyped(event.currentTarget.value)}
-          value={typed()}
-        />
-      </label>
       <Button
-        disabled={!ready()}
-        onClick={() => props.onConfirm()}
-       
+        disabled={props.pending || props.disabled}
+        onClick={() => setAsk(true)}
         type="button"
         variant={props.variant ?? "default"}
       >
         {props.pending ? t(() => m.state_loading()) : props.label}
       </Button>
       <Show when={props.error}>{(message) => <p class="text-sm text-destructive">{message()}</p>}</Show>
+      <Show when={ask()}>
+        <ConfirmDialog
+          body={t(() => m.confirm_irreversible())}
+          confirmLabel={props.label}
+          destructive={props.variant === "destructive"}
+          error={props.error}
+          pending={props.pending}
+          title={props.label}
+          onClose={() => setAsk(false)}
+          onConfirm={() => props.onConfirm()}
+        />
+      </Show>
     </div>
   );
 }
@@ -81,15 +86,16 @@ function ConflictSelect(props: { disabled?: boolean; value: ConflictMode; onChan
   return (
     <label class="flex flex-col gap-1.5 text-sm font-medium">
       {t(() => m.workspaces_on_conflict())}
-      <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+      <Select
         disabled={props.disabled}
-        onChange={(event) => props.onChange(event.currentTarget.value as ConflictMode)}
+        options={[
+          { label: t(() => m.workspaces_conflict_block()), value: "block" },
+          { label: t(() => m.workspaces_conflict_overwrite()), value: "overwrite" },
+          { label: t(() => m.workspaces_conflict_duplicate()), value: "duplicate" },
+        ]}
         value={props.value}
-      >
-        <option value="block">{t(() => m.workspaces_conflict_block())}</option>
-        <option value="overwrite">{t(() => m.workspaces_conflict_overwrite())}</option>
-        <option value="duplicate">{t(() => m.workspaces_conflict_duplicate())}</option>
-      </select>
+        onChange={props.onChange}
+      />
     </label>
   );
 }
@@ -160,19 +166,22 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
   return (
     <Shell
       description={<span>{t(() => m.workspace_subtitle())}</span>}
-      heading={
-        <>
-          <Link class="text-muted-foreground hover:text-foreground" to="/workspaces">
-            {t(() => m.nav_workspaces())}
-          </Link>
-          <span class="text-muted-foreground">/</span>
-          <span class="font-mono">{props.workspace}</span>
-        </>
-      }
+      crumb={[
+        { label: t(() => m.nav_workspaces()), to: "/workspaces" },
+        { label: props.workspace },
+      ]}
+      heading={<span>{props.workspace}</span>}
       level="server"
     >
-      <section class="flex flex-col gap-4">
-        <h2 class="text-sm font-medium">{t(() => m.home_projects())}</h2>
+      <Tabs defaultValue="projects">
+      <TabsList>
+        <TabsTrigger value="projects">{t(() => m.home_projects())}</TabsTrigger>
+        <TabsTrigger value="overview">{t(() => m.ws_metrics())}</TabsTrigger>
+        <Show when={canMutate(tier())}>
+          <TabsTrigger value="danger">{t(() => m.workspaces_risk())}</TabsTrigger>
+        </Show>
+      </TabsList>
+      <TabsContent class="flex flex-col gap-4" value="projects">
         <Show
           fallback={
             <div class="flex flex-col gap-3">
@@ -202,11 +211,12 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                 {
                   id: "project",
                   label: t(() => m.workspaces_col_project()),
+                  class: "w-48",
                   search: (row) => row.project_name,
                   sortValue: (row) => row.project_name,
                   cell: (row) => (
                     <Link
-                      class="font-mono text-xs hover:underline"
+                      class="block truncate hover:underline"
                       to="/s/$workspace/$project"
                       params={{ project: row.project_name, workspace: props.workspace }}
                     >
@@ -224,7 +234,7 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                 {
                   id: "updated",
                   label: t(() => m.workspaces_col_updated()),
-                  class: "w-36 text-xs text-muted-foreground",
+                  class: "w-36",
                   sortValue: (row) => row.last_updated ?? "",
                   cell: (row) => formatDateShort(row.last_updated),
                 },
@@ -233,46 +243,57 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                       {
                         id: "actions",
                         label: "",
-                        class: "w-48",
                         hideable: false,
                         cell: (row: (typeof projectsQ.data) extends (infer R)[] | undefined ? R : never) => (
-                          <div class="flex gap-1">
-                        <Button
-                          onClick={() => {
-                            setProjectAction({ kind: "rename", project: row.project_name });
-                            setProjectTo("");
-                            setActionError(null);
-                          }}
-                          type="button"
-                          variant="ghost"
-                        >
-                          {t(() => m.workspaces_project_rename())}
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setProjectAction({ kind: "move", project: row.project_name });
-                            setMoveTo(otherWorkspaces()[0] ?? "");
-                            setMoveConflict("block");
-                            setMoveForce(false);
-                            setActionError(null);
-                          }}
-                          type="button"
-                          variant="ghost"
-                        >
-                          {t(() => m.workspaces_project_move())}
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setProjectAction({ kind: "purge", project: row.project_name });
-                            setPurgeForce(false);
-                            setActionError(null);
-                          }}
-                          type="button"
-                          variant="ghost"
-                        >
-                          {t(() => m.workspaces_project_purge())}
-                        </Button>
-                      </div>
+                          <div class="flex justify-end gap-1">
+                            <Tooltip content={t(() => m.workspaces_project_rename())}>
+                              <Button
+                                aria-label={t(() => m.workspaces_project_rename())}
+                                size="icon-sm"
+                                type="button"
+                                variant="ghost"
+                                onClick={() => {
+                                  setProjectAction({ kind: "rename", project: row.project_name });
+                                  setProjectTo("");
+                                  setActionError(null);
+                                }}
+                              >
+                                <Pencil size={16} />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content={t(() => m.workspaces_project_move())}>
+                              <Button
+                                aria-label={t(() => m.workspaces_project_move())}
+                                size="icon-sm"
+                                type="button"
+                                variant="ghost"
+                                onClick={() => {
+                                  setProjectAction({ kind: "move", project: row.project_name });
+                                  setMoveTo(otherWorkspaces()[0] ?? "");
+                                  setMoveConflict("block");
+                                  setMoveForce(false);
+                                  setActionError(null);
+                                }}
+                              >
+                                <ArrowRightLeft size={16} />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content={t(() => m.workspaces_project_purge())}>
+                              <Button
+                                aria-label={t(() => m.workspaces_project_purge())}
+                                size="icon-sm"
+                                type="button"
+                                variant="ghost"
+                                onClick={() => {
+                                  setProjectAction({ kind: "purge", project: row.project_name });
+                                  setPurgeForce(false);
+                                  setActionError(null);
+                                }}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            </Tooltip>
+                          </div>
                         ),
                       },
                     ]
@@ -281,187 +302,6 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
             />
           </Show>
         </Show>
-      </section>
-
-      <section class="flex flex-col gap-4">
-        <h2 class="text-sm font-medium">{t(() => m.home_stats())}</h2>
-        <Show
-          fallback={
-            <div class="flex flex-col gap-3">
-              <Skeleton class="h-4 w-1/3 rounded-md" />
-              <Skeleton class="h-16 w-full rounded-md" />
-            </div>
-          }
-          when={!overviewQ.isPending}
-        >
-          <Show
-            fallback={<p class="text-sm text-muted-foreground">{t(() => m.workspaces_no_overview())}</p>}
-            when={overviewQ.data}
-          >
-            {(overview) => (
-              <div class="flex flex-col gap-4">
-                <Show when={overview().handoff}>{(handoff) => <HandoffCard handoff={handoff()} />}</Show>
-                <div class="grid grid-cols-4 gap-4 max-md:grid-cols-2">
-                  <Metric label={t(() => m.overview_pages())} value={overview().briefing.counts.pages_latest} />
-                  <Metric label={t(() => m.overview_versions())} value={overview().briefing.counts.pages_all} />
-                  <Metric label={t(() => m.overview_sessions())} value={overview().briefing.counts.sessions} />
-                  <Metric label={t(() => m.overview_observations())} value={overview().briefing.counts.observations} />
-                </div>
-                <div class="grid grid-cols-2 gap-4 max-md:grid-cols-1">
-                  <div class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
-                    <span class="text-xs text-muted-foreground">{t(() => m.workspaces_activity_7d())}</span>
-                    <div class="grid grid-cols-3 gap-2">
-                      <Metric
-                        label={t(() => m.workspaces_activity_sessions())}
-                        value={overview().briefing.activity_7d.sessions}
-                      />
-                      <Metric
-                        label={t(() => m.workspaces_activity_observations())}
-                        value={overview().briefing.activity_7d.observations}
-                      />
-                      <Metric
-                        label={t(() => m.workspaces_activity_pages())}
-                        value={overview().briefing.activity_7d.pages_updated}
-                      />
-                    </div>
-                  </div>
-                  <div class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
-                    <span class="text-xs text-muted-foreground">{t(() => m.workspaces_activity_30d())}</span>
-                    <div class="grid grid-cols-3 gap-2">
-                      <Metric
-                        label={t(() => m.workspaces_activity_sessions())}
-                        value={overview().briefing.activity_30d.sessions}
-                      />
-                      <Metric
-                        label={t(() => m.workspaces_activity_observations())}
-                        value={overview().briefing.activity_30d.observations}
-                      />
-                      <Metric
-                        label={t(() => m.workspaces_activity_pages())}
-                        value={overview().briefing.activity_30d.pages_updated}
-                      />
-                    </div>
-                  </div>
-                </div>
-                {/* contradictions é hardcoded 0 e audited_at hardcoded null no
-                    engine — não renderizar como métricas reais. */}
-                <div class="flex flex-col gap-2">
-                  <span class="text-sm font-medium">{t(() => m.ws_health_title())}</span>
-                  <div class="flex flex-wrap gap-4">
-                    <span class="flex items-center gap-2 text-sm">
-                      {t(() => m.health_stale())}
-                      <Badge class="w-fit" variant={overview().health.stale > 0 ? "warning" : "secondary"}>
-                        {overview().health.stale}
-                      </Badge>
-                    </span>
-                    <span class="flex items-center gap-2 text-sm">
-                      {t(() => m.health_duplicates())}
-                      <Badge class="w-fit" variant={overview().health.duplicates > 0 ? "warning" : "secondary"}>
-                        {overview().health.duplicates}
-                      </Badge>
-                    </span>
-                    <span class="flex items-center gap-2 text-sm">
-                      {t(() => m.health_orphans())}
-                      <Badge class="w-fit" variant={overview().health.orphans > 0 ? "warning" : "secondary"}>
-                        {overview().health.orphans}
-                      </Badge>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Show>
-        </Show>
-      </section>
-
-      <Show when={canMutate(tier())}>
-        <section class="flex flex-col gap-4">
-          <h2 class="text-sm font-medium">{t(() => m.workspaces_risk())}</h2>
-          <div class="grid grid-cols-3 gap-4 max-lg:grid-cols-1">
-            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-              <span class="text-sm font-medium">{t(() => m.workspaces_rename())}</span>
-              <TypedConfirm
-                disabled={!renameTo().trim() || renameTo().trim() === props.workspace}
-                error={actionError()}
-                label={t(() => m.workspaces_confirm())}
-                pending={busy()}
-                target={props.workspace}
-                onConfirm={() => {
-                  const to = renameTo().trim();
-                  if (!to || to === props.workspace) return;
-                  void run(() => adminRenameWorkspace(props.workspace, to), {
-                    href: `/workspaces/${encodeURIComponent(to)}`,
-                  });
-                }}
-              >
-                <label class="flex flex-col gap-1.5 text-sm font-medium">
-                  {t(() => m.workspaces_rename_to())}
-                  <Input class="font-mono"
-                    disabled={busy()}
-                    onInput={(event) => setRenameTo(event.currentTarget.value)}
-                    value={renameTo()}
-                  />
-                </label>
-              </TypedConfirm>
-            </div>
-
-            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-              <span class="text-sm font-medium">{t(() => m.workspaces_merge())}</span>
-              <TypedConfirm
-                disabled={!mergeTo() || mergeTo() === props.workspace}
-                error={actionError()}
-                label={t(() => m.workspaces_confirm())}
-                pending={busy()}
-                target={props.workspace}
-                variant="destructive"
-                onConfirm={() => {
-                  const to = mergeTo();
-                  if (!to) return;
-                  void run(
-                    () =>
-                      adminMergeWorkspace(props.workspace, to, {
-                        force: mergeForce(),
-                        on_conflict: mergeConflict(),
-                      }),
-                    { href: `/workspaces/${encodeURIComponent(to)}` },
-                  );
-                }}
-              >
-                <label class="flex flex-col gap-1.5 text-sm font-medium">
-                  {t(() => m.workspaces_merge_into())}
-                  <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-                    disabled={busy()}
-                    onChange={(event) => setMergeTo(event.currentTarget.value)}
-                    value={mergeTo()}
-                  >
-                    <option value="">{t(() => m.workspaces_merge_into())}</option>
-                    <For each={otherWorkspaces()}>{(name) => <option value={name}>{name}</option>}</For>
-                  </select>
-                </label>
-                <ConflictSelect disabled={busy()} onChange={setMergeConflict} value={mergeConflict()} />
-                <ForceCheck checked={mergeForce()} disabled={busy()} onChange={setMergeForce} />
-              </TypedConfirm>
-            </div>
-
-            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-              <span class="text-sm font-medium">{t(() => m.workspaces_delete())}</span>
-              <TypedConfirm
-                error={actionError()}
-                label={t(() => m.workspaces_confirm())}
-                pending={busy()}
-                target={props.workspace}
-                variant="destructive"
-                onConfirm={() => {
-                  void run(() => adminDeleteWorkspace(props.workspace, deleteForce()), {
-                    href: "/workspaces",
-                  });
-                }}
-              >
-                <ForceCheck checked={deleteForce()} disabled={busy()} onChange={setDeleteForce} />
-              </TypedConfirm>
-            </div>
-          </div>
-
           <Show when={projectAction()}>
             {(action) => (
               <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
@@ -470,7 +310,7 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                     <Show when={action().kind === "rename"}>{t(() => m.workspaces_project_rename())}</Show>
                     <Show when={action().kind === "move"}>{t(() => m.workspaces_project_move())}</Show>
                     <Show when={action().kind === "purge"}>{t(() => m.workspaces_project_purge())}</Show>
-                    <span class="ml-2 font-mono text-xs text-muted-foreground">{action().project}</span>
+                    <span class="ml-2 text-xs text-muted-foreground">{action().project}</span>
                   </span>
                   <Button
                     onClick={() => {
@@ -490,7 +330,6 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                     error={actionError()}
                     label={t(() => m.workspaces_confirm())}
                     pending={busy()}
-                    target={action().project}
                     onConfirm={() => {
                       const to = projectTo().trim();
                       if (!to || to === action().project) return;
@@ -501,7 +340,7 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                   >
                     <label class="flex flex-col gap-1.5 text-sm font-medium">
                       {t(() => m.workspaces_rename_to())}
-                      <Input class="font-mono"
+                      <Input
                         disabled={busy()}
                         onInput={(event) => setProjectTo(event.currentTarget.value)}
                         value={projectTo()}
@@ -515,7 +354,6 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                     error={actionError()}
                     label={t(() => m.workspaces_confirm())}
                     pending={busy()}
-                    target={action().project}
                     variant="destructive"
                     onConfirm={() => {
                       const to = moveTo();
@@ -535,14 +373,15 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                   >
                     <label class="flex flex-col gap-1.5 text-sm font-medium">
                       {t(() => m.workspaces_move_to())}
-                      <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+                      <Select
                         disabled={busy()}
-                        onChange={(event) => setMoveTo(event.currentTarget.value)}
+                        options={[
+                          { label: t(() => m.workspaces_move_to()), value: "" },
+                          ...otherWorkspaces().map((name) => ({ label: name, value: name })),
+                        ]}
                         value={moveTo()}
-                      >
-                        <option value="">{t(() => m.workspaces_move_to())}</option>
-                        <For each={otherWorkspaces()}>{(name) => <option value={name}>{name}</option>}</For>
-                      </select>
+                        onChange={setMoveTo}
+                      />
                     </label>
                     <ConflictSelect disabled={busy()} onChange={setMoveConflict} value={moveConflict()} />
                     <ForceCheck checked={moveForce()} disabled={busy()} onChange={setMoveForce} />
@@ -553,7 +392,6 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
                     error={actionError()}
                     label={t(() => m.workspaces_confirm())}
                     pending={busy()}
-                    target={action().project}
                     variant="destructive"
                     onConfirm={() => {
                       void run(
@@ -572,8 +410,167 @@ export function WorkspaceDetailScreen(props: { workspace: string }) {
               </div>
             )}
           </Show>
-        </section>
+      </TabsContent>
+
+      <TabsContent class="flex flex-col gap-4" value="overview">
+        <Show
+          fallback={
+            <div class="flex flex-col gap-3">
+              <Skeleton class="h-4 w-1/3 rounded-md" />
+              <Skeleton class="h-16 w-full rounded-md" />
+            </div>
+          }
+          when={!overviewQ.isPending}
+        >
+          <Show
+            fallback={<p class="text-sm text-muted-foreground">{t(() => m.workspaces_no_overview())}</p>}
+            when={overviewQ.data}
+          >
+            {(overview) => (
+              <div class="flex flex-col gap-4">
+                <Show when={overview().handoff}>{(handoff) => <HandoffCard handoff={handoff()} />}</Show>
+                <StatStrip>
+                  <StatCell label={t(() => m.overview_pages())} value={overview().briefing.counts.pages_latest} />
+                  <StatCell label={t(() => m.overview_versions())} value={overview().briefing.counts.pages_all} />
+                  <StatCell label={t(() => m.overview_sessions())} value={overview().briefing.counts.sessions} />
+                  <StatCell label={t(() => m.overview_observations())} value={overview().briefing.counts.observations} />
+                </StatStrip>
+                <div class="flex flex-col gap-2">
+                  <span class="text-xs text-muted-foreground">{t(() => m.workspaces_activity_7d())}</span>
+                  <StatStrip>
+                    <StatCell
+                      label={t(() => m.workspaces_activity_sessions())}
+                      value={overview().briefing.activity_7d.sessions}
+                    />
+                    <StatCell
+                      label={t(() => m.workspaces_activity_observations())}
+                      value={overview().briefing.activity_7d.observations}
+                    />
+                    <StatCell
+                      label={t(() => m.workspaces_activity_pages())}
+                      value={overview().briefing.activity_7d.pages_updated}
+                    />
+                  </StatStrip>
+                </div>
+                <div class="flex flex-col gap-2">
+                  <span class="text-xs text-muted-foreground">{t(() => m.workspaces_activity_30d())}</span>
+                  <StatStrip>
+                    <StatCell
+                      label={t(() => m.workspaces_activity_sessions())}
+                      value={overview().briefing.activity_30d.sessions}
+                    />
+                    <StatCell
+                      label={t(() => m.workspaces_activity_observations())}
+                      value={overview().briefing.activity_30d.observations}
+                    />
+                    <StatCell
+                      label={t(() => m.workspaces_activity_pages())}
+                      value={overview().briefing.activity_30d.pages_updated}
+                    />
+                  </StatStrip>
+                </div>
+                <div class="flex flex-col gap-2">
+                  <span class="text-xs text-muted-foreground">{t(() => m.ws_health_title())}</span>
+                  <StatStrip>
+                    <StatCell label={t(() => m.health_stale())} value={overview().health.stale} />
+                    <StatCell label={t(() => m.health_duplicates())} value={overview().health.duplicates} />
+                    <StatCell label={t(() => m.health_orphans())} value={overview().health.orphans} />
+                  </StatStrip>
+                </div>
+              </div>
+            )}
+          </Show>
+        </Show>
+      </TabsContent>
+
+      <Show when={canMutate(tier())}>
+        <TabsContent class="flex flex-col gap-4" value="danger">
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+              <span class="text-sm font-medium">{t(() => m.workspaces_rename())}</span>
+              <TypedConfirm
+                disabled={!renameTo().trim() || renameTo().trim() === props.workspace}
+                error={actionError()}
+                label={t(() => m.workspaces_confirm())}
+                pending={busy()}
+                onConfirm={() => {
+                  const to = renameTo().trim();
+                  if (!to || to === props.workspace) return;
+                  void run(() => adminRenameWorkspace(props.workspace, to), {
+                    href: `/workspaces/${encodeURIComponent(to)}`,
+                  });
+                }}
+              >
+                <label class="flex flex-col gap-1.5 text-sm font-medium">
+                  {t(() => m.workspaces_rename_to())}
+                  <Input
+                    disabled={busy()}
+                    onInput={(event) => setRenameTo(event.currentTarget.value)}
+                    value={renameTo()}
+                  />
+                </label>
+              </TypedConfirm>
+            </div>
+
+            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+              <span class="text-sm font-medium">{t(() => m.workspaces_merge())}</span>
+              <TypedConfirm
+                disabled={!mergeTo() || mergeTo() === props.workspace}
+                error={actionError()}
+                label={t(() => m.workspaces_confirm())}
+                pending={busy()}
+                onConfirm={() => {
+                  const to = mergeTo();
+                  if (!to) return;
+                  void run(
+                    () =>
+                      adminMergeWorkspace(props.workspace, to, {
+                        force: mergeForce(),
+                        on_conflict: mergeConflict(),
+                      }),
+                    { href: `/workspaces/${encodeURIComponent(to)}` },
+                  );
+                }}
+              >
+                <label class="flex flex-col gap-1.5 text-sm font-medium">
+                  {t(() => m.workspaces_merge_into())}
+                  <Select
+                    disabled={busy()}
+                    options={[
+                      { label: t(() => m.workspaces_merge_into()), value: "" },
+                      ...otherWorkspaces().map((name) => ({ label: name, value: name })),
+                    ]}
+                    value={mergeTo()}
+                    onChange={setMergeTo}
+                  />
+                </label>
+                <ConflictSelect disabled={busy()} onChange={setMergeConflict} value={mergeConflict()} />
+                <ForceCheck checked={mergeForce()} disabled={busy()} onChange={setMergeForce} />
+              </TypedConfirm>
+            </div>
+
+            <div class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+              <span class="text-sm font-medium">{t(() => m.workspaces_delete())}</span>
+              <TypedConfirm
+                error={actionError()}
+                label={t(() => m.workspaces_confirm())}
+                pending={busy()}
+                variant="destructive"
+                onConfirm={() => {
+                  void run(() => adminDeleteWorkspace(props.workspace, deleteForce()), {
+                    href: "/workspaces",
+                  });
+                }}
+              >
+                <ForceCheck checked={deleteForce()} disabled={busy()} onChange={setDeleteForce} />
+              </TypedConfirm>
+            </div>
+          </div>
+
+        </TabsContent>
       </Show>
+      </Tabs>
     </Shell>
+
   );
 }

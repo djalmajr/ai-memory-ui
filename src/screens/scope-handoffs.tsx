@@ -1,10 +1,14 @@
 import { useQuery } from "~/lib/query";
-import { For, Show, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 
 import { Badge } from "~/components/badge";
+import { Tooltip } from "~/components/tooltip";
 import { Button } from "~/components/button";
+import { Checkbox } from "~/components/checkbox";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { DataGrid } from "~/components/data-grid";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
+import { StatCell, StatStrip } from "~/components/stat-strip";
 import { Skeleton } from "~/components/skeleton";
 import { adminPendingWrites, adminExpireHandoffs } from "~/lib/admin-api";
 import { ApiError } from "~/lib/api";
@@ -46,8 +50,19 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
     queryKey: ["api", "handoffs", props.workspace, props.project, state(), allOwners(), limit()],
   }));
 
+  const open$ = useQuery(() => ({
+    queryFn: () =>
+      listHandoffs(props.workspace, props.project, {
+        all_owners: isAdminTier(tier()) || undefined,
+        limit: 1,
+        state: "open",
+      }),
+    queryKey: ["api", "handoffs", props.workspace, props.project, "open-exists"],
+  }));
+  const hasOpen = () => (open$.data?.handoffs.length ?? 0) > 0;
+
   const rows = () => list$.data?.handoffs ?? [];
-  const [expireArmed, setExpireArmed] = createSignal(false);
+  const [expireOpen, setExpireOpen] = createSignal(false);
   const [expirePending, setExpirePending] = createSignal(false);
   const [expireError, setExpireError] = createSignal<string | null>(null);
   const [expiredCount, setExpiredCount] = createSignal<number | null>(null);
@@ -58,10 +73,11 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
     try {
       const result = await adminExpireHandoffs(scope());
       setExpiredCount(result.expired);
-      setExpireArmed(false);
-      await list$.refetch();
+      await Promise.all([list$.refetch(), open$.refetch()]);
+      return true;
     } catch (error) {
       setExpireError(error instanceof ApiError ? error.message : String(error));
+      return false;
     } finally {
       setExpirePending(false);
     }
@@ -74,69 +90,42 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
       scope={scope()}
       pendingCount={pending$.data?.length}
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_handoffs())} />}
+      screen={t(() => m.nav_handoffs())}
     >
-      <div class="flex flex-wrap items-end gap-4">
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          {t(() => m.handoffs_col_state())}
-          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-            value={state()}
-            onChange={(event) => setState(event.currentTarget.value as HandoffState | "")}
-          >
-            <option value="">{t(() => m.handoffs_state_all())}</option>
-            <For each={[...HANDOFF_STATES]}>
-              {(value) => <option value={value}>{handoffStateLabel(value)}</option>}
-            </For>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          {t(() => m.handoffs_limit())}
-          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
-            value={String(limit())}
-            onChange={(event) => setLimit(Number(event.currentTarget.value))}
-          >
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
-          </select>
-        </label>
-        {/* all_owners=true exige Root; 403 `all_owners requires root authorization`.
-            Só oferecemos o controle no tier admin — se o engine ainda recusar,
-            a mensagem 403 aparece no estado de erro. Sem offset neste endpoint. */}
-        <Show when={isAdminTier(tier())}>
-          <label class="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              class="size-4 accent-primary"
-              checked={allOwners()}
-              onChange={(event) => setAllOwners(event.currentTarget.checked)}
-            />
-            {t(() => m.handoffs_all_owners())}
-          </label>
-        </Show>
-      </div>
-
       <Show when={canMutate(tier())}>
-        <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
-          <p class="text-sm">{t(() => m.handoffs_expire_desc())}</p>
-          <div class="flex flex-wrap items-center gap-2">
-            <Show
-              when={expireArmed()}
-              fallback={
-                <Button type="button" variant="outline" onClick={() => setExpireArmed(true)}>
-                  {t(() => m.handoffs_expire())}
-                </Button>
-              }
+        <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0 flex-1">
+              <h2 class="text-sm font-medium">{t(() => m.handoffs_expire())}</h2>
+              <p class="text-xs text-muted-foreground">{t(() => m.handoffs_expire_desc())}</p>
+            </div>
+            <Button
+              class="shrink-0"
+              disabled={!hasOpen()}
+              type="button"
+              variant="outline"
+              onClick={() => setExpireOpen(true)}
             >
-              <Button disabled={expirePending()} type="button" onClick={() => void expire()}>
-                {t(() => m.handoffs_expire_confirm())}
-              </Button>
+              {t(() => m.ops_execute())}
+            </Button>
+          </div>
+            <Show when={expireOpen()}>
+              <ConfirmDialog
+                body={t(() => m.handoffs_expire_desc())}
+                confirmLabel={t(() => m.handoffs_expire_confirm())}
+                destructive
+                error={expireError()}
+                pending={expirePending()}
+                title={t(() => m.handoffs_expire())}
+                onClose={() => setExpireOpen(false)}
+                onConfirm={() => void expire().then((ok) => { if (ok) setExpireOpen(false); })}
+              />
             </Show>
             <Show when={expiredCount() !== null}>
-              <span class="text-sm text-muted-foreground">
-                {t(() => m.handoffs_expired_n({ n: expiredCount() ?? 0 }))}
-              </span>
+              <StatStrip>
+                <StatCell label={t(() => m.handoffs_expire())} value={expiredCount() ?? 0} />
+              </StatStrip>
             </Show>
-          </div>
           <Show when={expireError()}>
             {(message) => (
               <p class="text-sm text-destructive" role="alert">
@@ -159,7 +148,38 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
       <Show when={!list$.isPending && !list$.isError}>
         <DataGrid
           empty={t(() => m.handoffs_empty())}
+          filters={[
+            {
+              label: t(() => m.handoffs_col_state()),
+              onChange: (value) => setState(value as HandoffState | ""),
+              options: [
+                { label: t(() => m.handoffs_state_all()), value: "" },
+                ...HANDOFF_STATES.map((value) => ({ label: handoffStateLabel(value), value })),
+              ],
+              value: state(),
+            },
+            {
+              label: t(() => m.handoffs_limit()),
+              onChange: (value) => setLimit(Number(value)),
+              options: [
+                { label: "50", value: "50" },
+                { label: "100", value: "100" },
+                { label: "200", value: "200" },
+              ],
+              value: String(limit()),
+            },
+          ]}
           items={rows()}
+          leading={
+            // all_owners=true exige Root; 403 `all_owners requires root authorization`.
+            // Sem offset neste endpoint.
+            isAdminTier(tier()) ? (
+              <label class="flex h-8 items-center gap-2 text-sm">
+                <Checkbox checked={allOwners()} onChange={setAllOwners} />
+                {t(() => m.handoffs_all_owners())}
+              </label>
+            ) : undefined
+          }
           tableClass="table-fixed"
           columns={[
             {
@@ -182,9 +202,9 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
               cell: (row) => (
                 <>
                   <div>{row.agent}</div>
-                  <div class="truncate font-mono text-xs text-muted-foreground" title={row.owner ?? ""}>
-                    {labelIdentityKey(row.owner)}
-                  </div>
+                  <Tooltip class="block min-w-0" content={row.owner || undefined}>
+                    <div class="truncate text-xs text-muted-foreground">{labelIdentityKey(row.owner)}</div>
+                  </Tooltip>
                 </>
               ),
             },
@@ -211,9 +231,9 @@ export function ScopeHandoffsScreen(props: { workspace: string; project: string 
               class: "w-48 text-xs",
               cell: (row) => (
                 <>
-                  <div class="font-mono" title={row.accepted_by ?? ""}>
-                    {labelIdentityKey(row.accepted_by)}
-                  </div>
+                  <Tooltip class="block min-w-0" content={row.accepted_by || undefined}>
+                    <div>{labelIdentityKey(row.accepted_by)}</div>
+                  </Tooltip>
                   <div class="tabular-nums text-muted-foreground">
                     {row.accepted_at ? formatDateTime(fromRfc3339(row.accepted_at)) : "—"}
                   </div>

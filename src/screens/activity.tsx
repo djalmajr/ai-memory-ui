@@ -37,7 +37,7 @@ function ActivityHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.activity_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -48,7 +48,7 @@ function ActivityHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -71,9 +71,11 @@ export function ActivityScreen() {
 
   return (
     <Shell
-      level="server"
-      heading={<span>{t(() => m.nav_activity())}</span>}
       description={<span>{t(() => m.activity_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_activity())}</span>}
+      screen={t(() => m.nav_activity())}
+      help={<ActivityHelp />}
+      level="server"
     >
       <Show when={!q.isPending} fallback={<LoadingBlock />}>
         <Show
@@ -86,7 +88,6 @@ export function ActivityScreen() {
           }
         >
           <DataGrid
-            beforeSort={<ActivityHelp />}
             empty={t(() => m.activity_empty_body())}
             filters={[
               {
@@ -106,7 +107,7 @@ export function ActivityScreen() {
               {
                 id: "client",
                 label: t(() => m.activity_col_client()),
-                class: "w-[220px] font-mono",
+                class: "w-[220px]",
                 search: (row) => row.client,
                 sortValue: (row) => row.client,
                 cell: (row) => row.client,

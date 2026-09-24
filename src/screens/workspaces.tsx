@@ -28,6 +28,7 @@ export function WorkspacesScreen() {
     <Shell
       description={<span>{t(() => m.workspaces_subtitle())}</span>}
       heading={<span>{t(() => m.nav_workspaces())}</span>}
+      screen={t(() => m.nav_workspaces())}
       level="server"
     >
       <Show
@@ -63,7 +64,7 @@ export function WorkspacesScreen() {
                 sortValue: (row) => row.workspace_name,
                 cell: (row) => (
                   <Link
-                    class="font-mono text-xs hover:underline"
+                    class="hover:underline"
                     to="/workspaces/$workspace"
                     params={{ workspace: row.workspace_name }}
                   >
@@ -88,7 +89,7 @@ export function WorkspacesScreen() {
               {
                 id: "updated",
                 label: t(() => m.workspaces_col_updated()),
-                class: "w-36 text-xs text-muted-foreground",
+                class: "w-36",
                 sortValue: (row) => row.last_updated ?? "",
                 cell: (row) => formatDateShort(row.last_updated),
               },

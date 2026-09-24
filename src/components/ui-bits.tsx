@@ -22,7 +22,7 @@ export function CollapsibleSection(props: {
 }) {
   const [open, setOpen] = createSignal(props.defaultOpen ?? true);
   return (
-    <div class="flex flex-col border-b">
+    <div class="flex flex-col">
       <button
         class="flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-semibold outline-none transition hover:bg-hover focus-visible:bg-hover"
         type="button"
@@ -108,16 +108,5 @@ export function KindBadge(props: { kind: string }) {
     <Badge class="lowercase" variant={variant()}>
       {props.kind}
     </Badge>
-  );
-}
-
-export function Metric(props: { inverted?: boolean; label: string; value: number | string }) {
-  return (
-    <div class="min-w-0">
-      <strong class="block font-heading text-xl leading-none">{props.value}</strong>
-      <small class={props.inverted ? "text-xs text-sidebar-foreground/60" : "text-xs text-muted-foreground"}>
-        {props.label}
-      </small>
-    </div>
   );
 }

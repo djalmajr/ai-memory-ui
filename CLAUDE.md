@@ -91,6 +91,13 @@ Both are idempotent: re-runs replace the block delimited by the ai-memory
 start/end HTML-comment markers, without disturbing the rest of the file.
 <!-- ai-memory:end -->
 
+## Design
+
+Before adding a screen or refactoring layout, color, or type, read `DESIGN.md`.
+It names the tokens already implemented in `src/index.css`. Do not invent a
+second palette, type scale, or header pattern. `npm run design:lint` checks
+the file. It is not part of `npm run build`.
+
 ## Solid 2 (migrated 2026-09-05 from Solid 1.9)
 
 Rules that keep the Solid 2 build working. Verified against `solid-js@2.0.0-rc.6`,

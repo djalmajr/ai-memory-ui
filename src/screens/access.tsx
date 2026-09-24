@@ -1,5 +1,5 @@
 import { useQuery } from "~/lib/query";
-import { For, Show, createSignal, onSettled } from "solid-js";
+import { Show, createSignal, onSettled } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
@@ -7,6 +7,7 @@ import { Button } from "~/components/button";
 import { DataGrid } from "~/components/data-grid";
 import { CircleHelp } from "~/components/icons";
 import { Input } from "~/components/input";
+import { Select } from "~/components/select";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
 import { EmptyState } from "~/components/ui-bits";
@@ -35,9 +36,11 @@ export function AccessScreen() {
 
   return (
     <Shell
-      level="server"
-      heading={<span>{t(() => m.nav_access())}</span>}
       description={<span>{t(() => m.access_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_access())}</span>}
+      screen={t(() => m.nav_access())}
+      help={<AccessHelp />}
+      level="server"
     >
       <Show
         when={allowed()}
@@ -62,7 +65,7 @@ function AccessHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.access_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -73,7 +76,7 @@ function AccessHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -160,16 +163,15 @@ export function AccessBody() {
               {t(() => m.access_new())}
             </Button>
           }
-          beforeSort={<AccessHelp />}
           empty={t(() => m.access_empty())}
           items={rows()}
           columns={[
             { id: "label", label: t(() => m.access_col_label()), class: "w-[180px] font-medium", search: (cred) => cred.label, sortValue: (cred) => cred.label, cell: (cred) => cred.label },
-            { id: "user", label: t(() => m.access_col_user()), class: "w-[150px] font-mono text-xs text-muted-foreground", sortValue: (cred) => userMap().get(cred.user_id) || cred.user_id, cell: (cred) => userMap().get(cred.user_id) || cred.user_id },
+            { id: "user", label: t(() => m.access_col_user()), class: "w-[150px]", sortValue: (cred) => userMap().get(cred.user_id) || cred.user_id, cell: (cred) => userMap().get(cred.user_id) || cred.user_id },
             { id: "preview", label: t(() => m.access_col_preview()), class: "w-[150px] font-mono text-xs", cell: (cred) => cred.preview || "aim_…••••" },
-            { id: "created", label: t(() => m.access_col_created()), class: "w-[130px] text-xs text-muted-foreground", sortValue: (cred) => cred.created_at, cell: (cred) => formatDateTime(fromMicros(cred.created_at)) },
-            { id: "used", label: t(() => m.access_col_last_used()), class: "w-[120px] text-xs text-muted-foreground", cell: (cred) => (cred.last_used_at != null ? formatRelative(fromMicros(cred.last_used_at)) : "—") },
-            { id: "expires", label: t(() => m.access_col_expires()), class: "w-[120px] text-xs text-muted-foreground", cell: (cred) => (cred.expires_at != null ? formatDateTime(fromMicros(cred.expires_at)) : "—") },
+            { id: "created", label: t(() => m.access_col_created()), class: "w-[130px]", sortValue: (cred) => cred.created_at, cell: (cred) => formatDateTime(fromMicros(cred.created_at)) },
+            { id: "used", label: t(() => m.access_col_last_used()), class: "w-[120px]", cell: (cred) => (cred.last_used_at != null ? formatRelative(fromMicros(cred.last_used_at)) : "—") },
+            { id: "expires", label: t(() => m.access_col_expires()), class: "w-[120px]", cell: (cred) => (cred.expires_at != null ? formatDateTime(fromMicros(cred.expires_at)) : "—") },
             {
               id: "status",
               label: t(() => m.access_col_status()),
@@ -413,18 +415,14 @@ function CreateApiCredentialDialog(props: {
           <span class="text-sm font-medium">
             {t(() => m.access_field_user())}
           </span>
-          <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+          <Select
+            options={props.users.map((user) => ({
+              label: user.name ? `${user.username} (${user.name})` : user.username,
+              value: user.username,
+            }))}
             value={username() || defaultUser()}
-            onChange={(e) => setUsername(e.currentTarget.value)}
-          >
-            <For each={props.users}>
-              {(u) => (
-                <option value={u.username}>
-                  {u.username} {u.name ? `(${u.name})` : ""}
-                </option>
-              )}
-            </For>
-          </select>
+            onChange={setUsername}
+          />
         </label>
 
 
@@ -459,13 +457,10 @@ function ConfirmNameDialog(props: {
   onClose: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  const [typed, setTyped] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
-  const matches = () => typed() === props.target;
 
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (!matches() || props.pending) return;
+  const submit = async () => {
+    if (props.pending) return;
     setError(null);
     try {
       await props.onConfirm();
@@ -476,15 +471,8 @@ function ConfirmNameDialog(props: {
 
   return (
     <Modal title={props.title} onClose={props.onClose}>
-      <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+      <div class="flex flex-col gap-4">
         <p class="text-xs text-muted-foreground">{props.body}</p>
-        <Input
-          autofocus
-          autocomplete="off"
-          spellcheck={false}
-          value={typed()}
-          onInput={(event) => setTyped(event.currentTarget.value)}
-        />
         <Show when={error()}>
           {(message) => (
             <p class="text-xs text-destructive" role="alert">
@@ -497,15 +485,15 @@ function ConfirmNameDialog(props: {
             {t(() => m.users_cancel())}
           </Button>
           <Button
-            type="submit"
-           
+            type="button"
             variant={props.destructive ? "destructive" : "default"}
-            disabled={!matches() || props.pending}
+            disabled={props.pending}
+            onClick={() => void submit()}
           >
             {props.confirmLabel}
           </Button>
         </div>
-      </form>
+      </div>
     </Modal>
   );
 }

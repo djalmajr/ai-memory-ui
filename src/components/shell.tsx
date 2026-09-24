@@ -31,6 +31,7 @@ import { Portal, type JSX } from "@solidjs/web";
 
 import { adminStatus } from "~/lib/admin-api";
 import { Button } from "~/components/button";
+import { Tooltip } from "~/components/tooltip";
 import { useQuery } from "~/lib/query";
 import { ScrollArea } from "~/components/scroll-area";
 import { useShellSearch } from "~/components/shell-search";
@@ -82,10 +83,18 @@ interface ShellProps {
   heading: JSX.Element;
   /** Linha sob o título, no mesmo bloco do header. */
   description?: JSX.Element;
+  /** Ajuda da página, imediatamente à direita do título. */
+  help?: JSX.Element;
   /** Slot direito do header: status e ações. */
   actions?: JSX.Element;
   /** Contagem da fila de pending writes, quando conhecida. */
   pendingCount?: number;
+  /** O corpo preenche a viewport e não rola; o filho cuida do próprio scroll. */
+  fill?: boolean;
+  /** Último item da faixa de breadcrumb. Com `scope`, o trilho é Workspaces / workspace / projeto / tela. */
+  screen?: string;
+  /** Substitui o trilho padrão. O último item não é link. */
+  crumb?: { label: string; params?: Record<string, string>; to?: string }[];
   children: JSX.Element;
 }
 
@@ -223,12 +232,17 @@ function NavRow(props: { collapsed?: boolean; item: NavItem; onNavigate?: () => 
   const active = createMemo(() => decodeURIComponent(location().pathname) === decodeURIComponent(href()));
 
   return (
+    <Tooltip
+      class={props.collapsed ? "inline-flex" : "flex w-full min-w-0"}
+      content={props.collapsed ? t(props.item.label) : undefined}
+      side="right"
+    >
     <Link
       to={props.item.to}
       params={props.item.params}
       class={cn(
         "flex items-center rounded-md text-sm outline-none transition",
-        props.collapsed ? "justify-center p-1.5" : "gap-2 px-2 py-1.5",
+        props.collapsed ? "justify-center p-1.5" : "w-full gap-2 px-2 py-1.5",
         "focus-visible:ring-2 focus-visible:ring-ring",
         active()
           ? "bg-active-item font-medium text-foreground"
@@ -236,10 +250,9 @@ function NavRow(props: { collapsed?: boolean; item: NavItem; onNavigate?: () => 
       )}
       aria-current={active() ? "page" : undefined}
       aria-label={props.collapsed ? t(props.item.label) : undefined}
-      title={props.collapsed ? t(props.item.label) : undefined}
       onClick={props.onNavigate}
     >
-      {props.item.icon({ size: 16, class: "shrink-0" })}
+      {props.item.icon({ size: 14, class: "shrink-0" })}
       <Show when={!props.collapsed}>
         <span class="min-w-0 flex-1 truncate">{t(props.item.label)}</span>
       </Show>
@@ -251,6 +264,7 @@ function NavRow(props: { collapsed?: boolean; item: NavItem; onNavigate?: () => 
         )}
       </Show>
     </Link>
+    </Tooltip>
   );
 }
 
@@ -286,17 +300,18 @@ function UserMenu() {
   };
   return (
     <div class="relative">
+      <Tooltip content={label() === "—" ? undefined : label()}>
       <button
         class="inline-flex size-8 shrink-0 items-center justify-center rounded-full outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         type="button"
         aria-label={label()}
-        title={label()}
         onClick={() => setOpen((value) => !value)}
       >
         <span class="grid size-8 place-items-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
           {initials()}
         </span>
       </button>
+      </Tooltip>
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div class="absolute top-full right-0 z-50 mt-1 w-56 overflow-hidden rounded-lg border border-hairline bg-popover p-1 text-popover-foreground shadow-xl">
@@ -357,49 +372,56 @@ function SidebarContent(props: {
             <span class="truncate text-sm font-semibold leading-tight">{t(() => m.brand_name())}</span>
             <span class="truncate text-xs leading-tight text-muted-foreground">{t(() => m.brand_subtitle())}</span>
           </div>
+          <Tooltip content={t(() => m.search_placeholder())} side="bottom">
           <button
             class="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             data-testid={props.searchTestId}
             type="button"
             aria-label={t(() => m.search_placeholder())}
-            title={t(() => m.search_placeholder())}
             onClick={() => props.onSearch()}
           >
             <Search size={16} />
           </button>
+          </Tooltip>
         </Show>
       </div>
       <Show when={props.collapsed}>
+        <Tooltip class="inline-flex self-center" content={t(() => m.search_placeholder())} side="right">
         <button
           class="grid size-7 place-items-center self-center rounded-md text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           data-testid={props.searchTestId}
           type="button"
           aria-label={t(() => m.search_placeholder())}
-          title={t(() => m.search_placeholder())}
           onClick={() => props.onSearch()}
         >
           <Search size={16} />
         </button>
+        </Tooltip>
       </Show>
 
       <Show when={props.level === "scope" && props.scope}>
         {(scope) => (
+          <Tooltip
+            class={props.collapsed ? "inline-flex justify-center" : "flex w-full min-w-0"}
+            content={props.collapsed ? `${scope().workspace}/${scope().project}` : undefined}
+            side="right"
+          >
           <Link
             to={isAdminTier(tier()) ? "/workspaces" : "/"}
             class={cn(
-              "flex items-center rounded-md py-1 text-xs text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-              props.collapsed ? "justify-center px-0" : "gap-1.5 px-2",
+              "flex items-center rounded-md py-1 text-sm text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              props.collapsed ? "justify-center px-0" : "w-full gap-1.5 px-2",
             )}
             aria-label={props.collapsed ? `${scope().workspace}/${scope().project}` : undefined}
-            title={props.collapsed ? `${scope().workspace}/${scope().project}` : undefined}
           >
             <ChevronLeft class="shrink-0" size={13} />
             <Show when={!props.collapsed}>
-              <span class="min-w-0 truncate font-mono">
+              <span class="min-w-0 truncate">
                 {scope().workspace}/{scope().project}
               </span>
             </Show>
           </Link>
+          </Tooltip>
         )}
       </Show>
 
@@ -441,17 +463,18 @@ function AboutButton() {
 
   return (
     <>
+      <Tooltip content={t(() => m.about_label())} side="right">
       <Button
         aria-label={t(() => m.about_label())}
         class="text-muted-foreground"
         size="icon-sm"
-        title={t(() => m.about_label())}
         type="button"
         variant="ghost"
         onClick={() => setOpen(true)}
       >
         <CircleHelp />
       </Button>
+      </Tooltip>
       <Show when={open()}>
         <AboutDialog version={status.data?.version} onClose={() => setOpen(false)} />
       </Show>
@@ -504,14 +527,13 @@ function AboutDialog(props: { version?: string; onClose: () => void }) {
             </h2>
             <p class="text-sm text-muted-foreground">{t(() => m.brand_subtitle())}</p>
           </div>
-          <span
-            class="cursor-default rounded-full border border-hairline px-2.5 py-0.5 font-mono text-xs text-muted-foreground"
-            title={t(() => m.overview_engine_status_hint())}
-          >
+          <Tooltip content={t(() => m.overview_engine_status_hint())}>
+          <span class="cursor-default rounded-full border border-hairline px-2.5 py-0.5 text-xs text-muted-foreground">
             <Show when={props.version} fallback="—">
               {(version) => t(() => m.overview_engine_status({ version: version() }))}
             </Show>
           </span>
+          </Tooltip>
           <p class="text-sm text-muted-foreground">{t(() => m.about_description())}</p>
         </div>
       </div>
@@ -530,6 +552,36 @@ function loadSidebarCollapsed(): boolean {
   } catch {
     return false; // storage indisponível — começa expandida
   }
+}
+
+function crumbItems(props: ShellProps): { label: string; params?: Record<string, string>; to?: string }[] {
+  if (props.crumb) return props.crumb;
+  if (!props.screen) return [];
+  if (props.level === "scope" && props.scope) {
+    const scope = props.scope;
+    return [
+      { label: t(() => m.nav_workspaces()), to: "/workspaces" },
+      {
+        label: scope.workspace,
+        params: { workspace: scope.workspace },
+        to: "/workspaces/$workspace",
+      },
+      {
+        label: scope.project,
+        params: { project: scope.project, workspace: scope.workspace },
+        to: "/s/$workspace/$project",
+      },
+      { label: props.screen },
+    ];
+  }
+  const group = serverGroups(tier()).find(
+    (entry) => entry.title && entry.items.some((item) => t(item.label) === props.screen),
+  );
+  if (group?.title) return [{ label: t(group.title) }, { label: props.screen }];
+  return [
+    { label: t(() => m.nav_overview()), to: "/" },
+    { label: props.screen },
+  ];
 }
 
 export function Shell(props: ShellProps) {
@@ -612,7 +664,7 @@ export function Shell(props: ShellProps) {
       </nav>
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-content-bg">
-        <header class="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
+        <header class="relative z-20 flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
             <div class="flex min-w-0 items-center gap-2">
               <button
                 class="-ml-1 rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
@@ -623,18 +675,24 @@ export function Shell(props: ShellProps) {
               >
                 <Menu size={18} />
               </button>
-              <button
-                class="-ml-1 hidden rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
-                type="button"
-                aria-expanded={!collapsed() ? "true" : "false"}
-                aria-label={t(() => m.shell_toggle_sidebar())}
-                title={t(() => m.shell_toggle_sidebar())}
-                onClick={toggleCollapsed}
-              >
-                <PanelLeft size={17} />
-              </button>
+              <Tooltip class="hidden lg:inline-flex" content={t(() => m.shell_toggle_sidebar())} side="bottom">
+                <button
+                  class="-ml-1 hidden rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+                  type="button"
+                  aria-expanded={!collapsed() ? "true" : "false"}
+                  aria-label={t(() => m.shell_toggle_sidebar())}
+                  onClick={toggleCollapsed}
+                >
+                  <PanelLeft size={17} />
+                </button>
+              </Tooltip>
               <div class="flex min-w-0 flex-col">
-                <div class="truncate text-sm font-medium leading-tight">{props.heading}</div>
+                <div class="flex min-w-0 items-center gap-0.5">
+                  <div class="min-w-0 truncate text-sm font-medium leading-tight">{props.heading}</div>
+                  <Show when={props.help}>
+                    <div class="shrink-0">{props.help}</div>
+                  </Show>
+                </div>
                 <Show when={props.description}>
                   <div class="truncate text-xs leading-tight text-muted-foreground">{props.description}</div>
                 </Show>
@@ -652,7 +710,18 @@ export function Shell(props: ShellProps) {
             </div>
           </header>
         <ScrollArea fill class="min-h-0 flex-1">
-          <div class="flex min-h-full flex-col gap-4 p-4">{props.children}</div>
+          <div
+            class={
+              props.fill
+                ? "flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4"
+                : "flex min-h-full flex-col gap-4 p-4"
+            }
+          >
+            <Show when={crumbItems(props).length > 0}>
+              <CrumbBar items={crumbItems(props)} />
+            </Show>
+            {props.children}
+          </div>
         </ScrollArea>
       </div>
 
@@ -662,19 +731,43 @@ export function Shell(props: ShellProps) {
   );
 }
 
-// Breadcrumb do nível escopo: `Workspaces / {ws} / {proj} / {tela}`.
+// Nome da tela no header. Workspace e projeto ficam no seletor da sidebar.
 export function ScopeBreadcrumb(props: { scope: ScopeRef; screen: string }) {
+  return <span>{props.screen}</span>;
+}
+
+function CrumbBar(props: { items: { label: string; params?: Record<string, string>; to?: string }[] }) {
   return (
-    <>
-      <Link to="/workspaces" class="text-muted-foreground hover:text-foreground">
-        {t(() => m.shell_back_to_workspaces())}
-      </Link>
-      <span class="text-muted-foreground">/</span>
-      <span class="font-mono text-muted-foreground">{props.scope.workspace}</span>
-      <span class="text-muted-foreground">/</span>
-      <span class="font-mono">{props.scope.project}</span>
-      <span class="text-muted-foreground">/</span>
-      <span>{props.screen}</span>
-    </>
+    <div class="-mx-4 -mt-4 border-b border-hairline px-4 py-2">
+      <nav aria-label="breadcrumb" class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+        <For each={props.items}>
+          {(item, index) => {
+            const last = () => index() === props.items.length - 1;
+            return (
+              <>
+                <Show when={index() > 0}>
+                  <span class="opacity-40">/</span>
+                </Show>
+                <Show
+                  when={!last() && item.to}
+                  fallback={
+                    <span class={last() ? "truncate font-medium text-foreground" : "truncate"}>{item.label}</span>
+                  }
+                >
+                  <Link
+                    activeOptions={{ exact: true }}
+                    class="truncate rounded-sm hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                    params={item.params}
+                    to={item.to!}
+                  >
+                    {item.label}
+                  </Link>
+                </Show>
+              </>
+            );
+          }}
+        </For>
+      </nav>
+    </div>
   );
 }

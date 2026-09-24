@@ -4,6 +4,7 @@ import type { JSX } from "@solidjs/web";
 
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
+import { Tooltip } from "~/components/tooltip";
 import { Ban, Check, CircleHelp, Clock, Ellipsis, KeyRound, Pencil, RefreshCw } from "~/components/icons";
 import { Input } from "~/components/input";
 import { Content as PopoverContent, Portal as PopoverPortal, Root as PopoverRoot, Trigger as PopoverTrigger } from "~/components/popover";
@@ -43,9 +44,11 @@ export function UsersScreen() {
 
   return (
     <Shell
-      level="server"
-      heading={<span>{t(() => m.nav_users())}</span>}
       description={<span>{t(() => m.users_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_users())}</span>}
+      screen={t(() => m.nav_users())}
+      help={<UsersHelp />}
+      level="server"
     >
       <Show when={allowed()} fallback={<Forbidden />}>
         <UsersBody />
@@ -92,7 +95,7 @@ function UserRowActions(props: {
     "flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4";
 
   return (
-    <div class="flex justify-end gap-1">
+    <div class="flex justify-start gap-1">
       <Button
         aria-label={t(() => m.users_action_edit())}
         disabled={props.busy}
@@ -134,16 +137,17 @@ function UserRowActions(props: {
                 </button>
               }
             >
+              <Tooltip class="flex w-full" content={props.lastRoot ? t(() => m.users_last_root_protected()) : undefined}>
               <button
                 class={cn(itemClass, "text-destructive hover:bg-destructive/10")}
                 disabled={props.lastRoot}
-                title={props.lastRoot ? t(() => m.users_last_root_protected()) : undefined}
                 type="button"
                 onClick={() => close(props.onDisable)}
               >
                 <Ban />
                 {t(() => m.users_action_disable())}
               </button>
+              </Tooltip>
             </Show>
           </PopoverContent>
         </PopoverPortal>
@@ -222,7 +226,6 @@ function UsersBody() {
               {t(() => m.users_new())}
             </Button>
           }
-          beforeSort={<UsersHelp />}
           empty={t(() => m.users_empty_body())}
           items={rows()}
           searchPlaceholder={t(() => m.users_col_username())}
@@ -230,7 +233,7 @@ function UsersBody() {
             {
               id: "username",
               label: t(() => m.users_col_username()),
-              class: "w-[140px] font-mono",
+              class: "w-[140px]",
               search: (user) => `${user.username} ${user.name ?? ""} ${user.email ?? ""}`,
               sortValue: (user) => user.username,
               cell: (user) => user.username,
@@ -263,7 +266,7 @@ function UsersBody() {
                 ],
               },
               cell: (user) => (
-                <Badge variant={user.role === "root" ? "default" : "secondary"}>
+                <Badge variant={user.role === "root" ? "outline" : "secondary"}>
                   {user.role === "root" ? t(() => m.users_role_root()) : t(() => m.users_role_user())}
                 </Badge>
               ),
@@ -277,14 +280,14 @@ function UsersBody() {
             {
               id: "created",
               label: t(() => m.users_col_created()),
-              class: "w-[130px] text-xs text-muted-foreground",
+              class: "w-[130px]",
               sortValue: (user) => user.created_at,
               cell: (user) => formatDateTime(fromMicros(user.created_at)),
             },
             {
               id: "seen",
               label: t(() => m.users_col_last_seen()),
-              class: "w-[120px] text-xs text-muted-foreground",
+              class: "w-[120px]",
               sortValue: (user) => user.last_used_at ?? user.last_seen_at ?? 0,
               cell: (user) =>
                 user.last_used_at !== null && user.last_used_at !== undefined
@@ -501,7 +504,7 @@ function UsersHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.users_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -512,7 +515,7 @@ function UsersHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -811,13 +814,10 @@ function ConfirmNameDialog(props: {
   onClose: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  const [typed, setTyped] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
-  const matches = () => typed() === props.target;
 
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (!matches() || props.pending) return;
+  const submit = async () => {
+    if (props.pending) return;
     setError(null);
     try {
       await props.onConfirm();
@@ -828,16 +828,8 @@ function ConfirmNameDialog(props: {
 
   return (
     <Modal title={props.title} onClose={props.onClose}>
-      <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+      <div class="flex flex-col gap-4">
         <p class="text-xs text-muted-foreground">{props.body}</p>
-        <Input
-          autofocus
-          autocomplete="off"
-          spellcheck={false}
-          class="font-mono"
-          value={typed()}
-          onInput={(event) => setTyped(event.currentTarget.value)}
-        />
         <Show when={error()}>
           {(message) => (
             <p class="text-xs text-destructive" role="alert">
@@ -850,15 +842,15 @@ function ConfirmNameDialog(props: {
             {t(() => m.users_cancel())}
           </Button>
           <Button
-            type="submit"
-           
+            type="button"
             variant={props.destructive ? "destructive" : "default"}
-            disabled={!matches() || props.pending}
+            disabled={props.pending}
+            onClick={() => void submit()}
           >
             {props.confirmLabel}
           </Button>
         </div>
-      </form>
+      </div>
     </Modal>
   );
 }

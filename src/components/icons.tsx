@@ -211,6 +211,16 @@ export function GripVertical(props: IconProps) {
   );
 }
 
+export function Save(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+      <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+      <path d="M7 3v4a1 1 0 0 0 1 1h7" />
+    </IconBase>
+  );
+}
+
 export function Trash2(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -480,6 +490,65 @@ export function Link2(props: IconProps) {
   );
 }
 
+export function Bold(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
+      <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
+    </IconBase>
+  );
+}
+
+export function Italic(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <line x1="19" x2="10" y1="4" y2="4" />
+      <line x1="14" x2="5" y1="20" y2="20" />
+      <line x1="15" x2="9" y1="4" y2="20" />
+    </IconBase>
+  );
+}
+
+export function Heading(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 12h8" />
+      <path d="M4 18V6" />
+      <path d="M12 18V6" />
+      <path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1" />
+    </IconBase>
+  );
+}
+
+export function Code(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m16 18 6-6-6-6" />
+      <path d="m8 6-6 6 6 6" />
+    </IconBase>
+  );
+}
+
+export function Columns2(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect height="18" rx="2" width="18" x="3" y="3" />
+      <path d="M12 3v18" />
+    </IconBase>
+  );
+}
+
+export function FileCode(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M10 12.5 8 15l2 2.5" />
+      <path d="m14 12.5 2 2.5-2 2.5" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+    </IconBase>
+  );
+}
+
 export function List(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -543,6 +612,17 @@ export function PanelLeft(props: IconProps) {
     <IconBase {...props}>
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M9 3v18" />
+    </IconBase>
+  );
+}
+
+export function ArrowRightLeft(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m16 3 4 4-4 4" />
+      <path d="M20 7H4" />
+      <path d="m8 21-4-4 4-4" />
+      <path d="M4 17h16" />
     </IconBase>
   );
 }

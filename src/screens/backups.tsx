@@ -31,7 +31,7 @@ function BackupsHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.backups_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -42,7 +42,7 @@ function BackupsHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -95,9 +95,11 @@ export function BackupsScreen() {
 
   return (
     <Shell
-      level="server"
-      heading={<span>{t(() => m.nav_backups())}</span>}
       description={<span>{t(() => m.backups_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_backups())}</span>}
+      screen={t(() => m.nav_backups())}
+      help={<BackupsHelp />}
+      level="server"
     >
       <Show when={downloadError()}>
         {(message) => (
@@ -131,10 +133,9 @@ export function BackupsScreen() {
       </Show>
       <Show when={!q.isPending && !q.isError}>
           <DataGrid
-            beforeSort={<BackupsHelp />}
             action={
               <>
-                <Button type="button" variant="outline" onClick={() => setRestoreOpen(true)}>
+                <Button class="font-normal" type="button" variant="outline" onClick={() => setRestoreOpen(true)}>
                   {t(() => m.backups_restore())}
                 </Button>
                 <Button
@@ -167,7 +168,7 @@ export function BackupsScreen() {
               {
                 id: "time",
                 label: t(() => m.backups_col_time()),
-                class: "w-40 text-muted-foreground",
+                class: "w-40",
                 sortValue: (row) => row.time,
                 cell: (row) => formatDateTime(fromUnixSeconds(row.time)),
               },

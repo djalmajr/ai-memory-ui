@@ -4,8 +4,10 @@ import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
 import { Button } from "~/components/button";
+import { Tooltip } from "~/components/tooltip";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
+import { StatCell, StatStrip } from "~/components/stat-strip";
 import { EmptyState } from "~/components/ui-bits";
 import {
   adminActivityByClient,
@@ -97,19 +99,6 @@ function formatCompact(value: number): string {
 
 function formatFull(value: number): string {
   return new Intl.NumberFormat(useLocale()).format(value);
-}
-
-/** Célula do stat strip do protótipo: rótulo, valor 17px, sublinha muted. */
-function StatCell(props: { label: string; mono?: boolean; sub: string; value: string }) {
-  return (
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5 border-hairline p-4 not-last:border-r max-md:not-last:border-r-0 max-md:not-last:border-b">
-      <span class="text-xs text-muted-foreground">{props.label}</span>
-      <strong class="truncate text-[17px] font-semibold leading-[22px]">{props.value}</strong>
-      <span class={props.mono ? "truncate font-mono text-xs text-muted-foreground" : "truncate text-xs text-muted-foreground"}>
-        {props.sub}
-      </span>
-    </div>
-  );
 }
 
 /** Resumo da célula LLM + Embeddings a partir do snapshot de providers. */
@@ -240,6 +229,7 @@ export function ServerOverviewScreen() {
   return (
     <Shell
       description={<span>{t(() => m.overview_subtitle())}</span>}
+      crumb={[{ label: t(() => m.nav_overview()) }]}
       heading={<span>{t(() => m.nav_overview())}</span>}
       level="server"
     >
@@ -260,7 +250,7 @@ export function ServerOverviewScreen() {
         >
           <Show when={statusQ.data}>
             {(status) => (
-              <div class="flex w-full rounded-lg border border-hairline max-md:flex-col">
+              <StatStrip>
                 <StatCell
                   label={t(() => m.overview_backup())}
                   mono
@@ -282,12 +272,12 @@ export function ServerOverviewScreen() {
                   sub={providersSummary(status().providers).sub}
                   value={providersSummary(status().providers).value}
                 />
-              </div>
+              </StatStrip>
             )}
           </Show>
           <Show when={statusQ.data?.storage}>
             {(storage) => (
-              <div class="mt-1.5 flex w-full rounded-lg border border-hairline max-md:flex-col">
+              <StatStrip>
                 <StatCell
                   label={t(() => m.overview_disk_free())}
                   sub={
@@ -307,7 +297,7 @@ export function ServerOverviewScreen() {
                   sub={t(() => m.overview_reclaimable_sub())}
                   value={formatBytes(storage().reclaimable_bytes)}
                 />
-              </div>
+              </StatStrip>
             )}
           </Show>
         </QueryBlock>
@@ -332,7 +322,7 @@ export function ServerOverviewScreen() {
                   <span class="min-w-0 flex-1 truncate text-sm">
                     {t(() => m.overview_attention_row({ count: row.pending }))}
                   </span>
-                  <span class="shrink-0 font-mono text-xs text-muted-foreground">
+                  <span class="shrink-0 text-xs text-muted-foreground">
                     {row.workspace}/{row.project}
                   </span>
                   <Link
@@ -366,13 +356,15 @@ export function ServerOverviewScreen() {
                 <div class="flex items-center gap-3 border-hairline px-3.5 py-2.5 not-last:border-b">
                   <Show
                     fallback={
-                      <span class="w-28 shrink-0 truncate text-xs italic text-muted-foreground">
-                        {t(() => m.overview_client_unknown())}
-                      </span>
+                      <Tooltip class="block w-28 shrink-0" content={t(() => m.overview_client_unknown_hint())}>
+                        <span class="block truncate text-xs text-muted-foreground">
+                          {t(() => m.overview_client_unknown())}
+                        </span>
+                      </Tooltip>
                     }
                     when={row.client !== "unknown"}
                   >
-                    <span class="w-28 shrink-0 truncate font-mono text-xs">{row.client}</span>
+                    <span class="w-28 shrink-0 truncate text-xs">{row.client}</span>
                   </Show>
                   <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
                     <div

@@ -40,3 +40,6 @@ bun.lock
 
 # Planos locais do agente
 .agents/plans/
+
+# Snapshots locais de SQLite (não versionar)
+.tmp/

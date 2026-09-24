@@ -6,6 +6,7 @@ import { Button } from "~/components/button";
 import { ArrowDownUp, Check, ChevronDown, ChevronsUpDown, ChevronUp, GripVertical, PlusCircle, Settings2, Trash2, X } from "~/components/icons";
 import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
+import { Select } from "~/components/select";
 import { Content as PopoverContent, Portal as PopoverPortal, Root as PopoverRoot, Trigger as PopoverTrigger } from "~/components/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/table";
 import { TablePager } from "~/components/table-pager";
@@ -171,15 +172,25 @@ export function DataGrid<T>(props: {
   /** Slot immediately to the left of the Sort button. */
   beforeSort?: JSX.Element;
   columns: GridColumn<T>[];
+  countLabel?: (total: number) => string;
+  defaultQuery?: string;
   empty: string;
   filters?: GridFilter[];
   items: readonly T[];
   onRow?: (item: T) => void;
   pager?: boolean;
   searchPlaceholder?: string;
+  /** Caps the table. It grows with the rows, then the ScrollArea scrolls the body. */
+  scrollClass?: string;
   tableClass?: string;
 }) {
-  const [query, setQuery] = createSignal("");
+  const [query, setQuery] = createSignal(props.defaultQuery ?? "");
+  createEffect(
+    () => props.defaultQuery ?? "",
+    (next) => {
+      setQuery(next);
+    },
+  );
   const [filters, setFilters] = createSignal<Record<string, string[]>>({});
   const [hidden, setHidden] = createSignal<Record<string, boolean>>({});
   const [sort, setSort] = createSignal<{ desc: boolean; id: string } | null>(null);
@@ -304,7 +315,7 @@ export function DataGrid<T>(props: {
               <ArrowDownUp class="text-muted-foreground" size={16} />
               {t(() => m.table_sort())}
               <Show when={sort()}>
-                <Badge class="h-[18px] rounded-[3px] px-1 font-mono text-[10px] font-normal" variant="secondary">
+                <Badge class="h-[18px] rounded-[3px] px-1 text-[10px] font-normal" variant="secondary">
                   1
                 </Badge>
               </Show>
@@ -323,31 +334,21 @@ export function DataGrid<T>(props: {
                 <Show when={sort()}>
                   {(current) => (
                     <div class="flex items-center gap-2">
-                      <div class="relative w-40">
-                        <select
-                          aria-label={t(() => m.table_sort())}
-                          class="h-8 w-full appearance-none rounded-md border border-input bg-background pr-8 pl-2.5 text-sm outline-none"
-                          value={current().id}
-                          onChange={(event) => setSort({ desc: current().desc, id: event.currentTarget.value })}
-                        >
-                          <For each={sortable()}>
-                            {(column) => <option value={column.id}>{column.label}</option>}
-                          </For>
-                        </select>
-                        <ChevronsUpDown class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 opacity-50" size={16} />
-                      </div>
-                      <div class="relative w-36">
-                        <select
-                          aria-label={t(() => m.table_sort())}
-                          class="h-8 w-full appearance-none rounded-md border border-input bg-background pr-8 pl-2.5 text-sm outline-none"
-                          value={current().desc ? "desc" : "asc"}
-                          onChange={(event) => setSort({ desc: event.currentTarget.value === "desc", id: current().id })}
-                        >
-                          <option value="asc">{t(() => m.table_sort_asc())}</option>
-                          <option value="desc">{t(() => m.table_sort_desc())}</option>
-                        </select>
-                        <ChevronsUpDown class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 opacity-50" size={16} />
-                      </div>
+                      <Select
+                        class="w-40"
+                        options={sortable().map((column) => ({ label: column.label, value: column.id }))}
+                        value={current().id}
+                        onChange={(id) => setSort({ desc: current().desc, id })}
+                      />
+                      <Select
+                        class="w-36"
+                        options={[
+                          { label: t(() => m.table_sort_asc()), value: "asc" },
+                          { label: t(() => m.table_sort_desc()), value: "desc" },
+                        ]}
+                        value={current().desc ? "desc" : "asc"}
+                        onChange={(direction) => setSort({ desc: direction === "desc", id: current().id })}
+                      />
                       <Button
                         aria-label={t(() => m.table_sort_clear())}
                         class="size-8 shrink-0 rounded-md"
@@ -421,15 +422,15 @@ export function DataGrid<T>(props: {
         </div>
       </div>
       <div class="overflow-hidden rounded-md border border-hairline">
-        <Table class={props.tableClass}>
-          <TableHeader>
+        <Table class={props.tableClass} scrollClass={props.scrollClass}>
+          <TableHeader class={props.scrollClass ? "sticky top-0 z-10 bg-content-bg [&_th]:bg-content-bg" : undefined}>
             <TableRow>
               <For each={shown()}>
                 {(column) => (
                   <TableHead class={cn(column.class, "font-sans")}>
                     <Show
                       when={column.sortValue}
-                      fallback={<span>{column.label}</span>}
+                      fallback={<span class="-ml-1.5 inline-flex h-8 items-center px-2">{column.label}</span>}
                     >
                       <button
                         class="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-md px-2 hover:bg-accent"
@@ -473,6 +474,7 @@ export function DataGrid<T>(props: {
       </div>
       <Show when={paged()}>
         <TablePager
+          leading={props.countLabel?.(sorted().length)}
           page={page()}
           pageSize={pageSize()}
           total={sorted().length}

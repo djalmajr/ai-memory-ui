@@ -349,7 +349,13 @@
   --tw-prose-invert-pre-bg: color-mix(in oklch, var(--muted) 70%, transparent);
   --tw-prose-invert-pre-code: color-mix(in oklch, var(--foreground) 90%, transparent);
 }
-.prose pre.hljs {
-  font-size: 0.9rem;
-  line-height: 1.65;
+/* text-sm da plataforma: 14px / 20px. O prose-sm deixa o parágrafo em 14px/24px
+   e o `code` inline em 12px; o bloco precisa do mesmo corpo que o parágrafo. */
+.prose p,
+.prose li,
+.prose pre,
+.prose pre code,
+.prose :not(pre) > code {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }

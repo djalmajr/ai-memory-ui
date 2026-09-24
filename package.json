@@ -10,15 +10,26 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "design:lint": "npx -p @google/design.md designmd lint DESIGN.md"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
     "@floating-ui/dom": "^1.8.0",
     "@fontsource-variable/noto-sans": "^5.3.0",
+    "@lezer/highlight": "^1.2.3",
     "@solidjs/web": "2.0.0-rc.6",
     "@tanstack/solid-query": "6.0.0-rc.3",
     "@tanstack/solid-router": "2.0.0-rc.6",
     "@tanstack/virtual-core": "^3.17.8",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/markdown": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.2.0",
     "solid-js": "2.0.0-rc.6"

@@ -69,13 +69,13 @@ function TabsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
   };
   return (
     <div
+      {...others}
       class={cn(
         "group/tabs-list inline-flex h-8 w-fit items-center justify-center rounded-lg bg-muted p-[3px] text-muted-foreground",
         props.class,
       )}
       role="tablist"
       onKeyDown={onKeyDown}
-      {...others}
     />
   );
 }
@@ -86,6 +86,7 @@ function TabsTrigger(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & { valu
   const others = omit(props, "class", "onClick", "value");
   return (
     <button
+      {...others}
       aria-controls={`${tabs.baseId}-panel-${props.value}`}
       aria-selected={active() ? "true" : "false"}
       class={cn(
@@ -102,7 +103,6 @@ function TabsTrigger(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & { valu
         if (typeof props.onClick === "function") props.onClick(event);
         tabs.select(props.value);
       }}
-      {...others}
     />
   );
 }
@@ -112,13 +112,13 @@ function TabsContent(props: JSX.HTMLAttributes<HTMLDivElement> & { value: string
   const others = omit(props, "class", "value");
   return (
     <div
+      {...others}
       aria-labelledby={`${tabs.baseId}-tab-${props.value}`}
       class={cn("flex-1 text-sm outline-none", props.class)}
       hidden={tabs.value() !== props.value}
       id={`${tabs.baseId}-panel-${props.value}`}
       role="tabpanel"
       tabindex={0}
-      {...others}
     />
   );
 }

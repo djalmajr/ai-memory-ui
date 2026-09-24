@@ -243,6 +243,7 @@ export function ScrollArea(props: {
   class?: string;
   /** Fill a definite-height parent (`flex-1 min-h-0`, `h-dvh`) and scroll inside it. */
   fill?: boolean;
+  tabIndex?: number;
   viewportRef?: (el: HTMLDivElement | null) => void;
 }) {
   let root: HTMLDivElement | undefined;
@@ -272,7 +273,7 @@ export function ScrollArea(props: {
         }}
         class={cn(viewportClass, props.fill ? "absolute inset-0" : props.class)}
         data-slot="scroll-area-viewport"
-        tabindex={0}
+        tabindex={props.tabIndex ?? 0}
       >
         {props.children}
       </div>

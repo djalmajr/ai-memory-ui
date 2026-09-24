@@ -1,14 +1,17 @@
-import { For } from "solid-js";
+import type { JSX } from "@solidjs/web";
+import { Show } from "solid-js";
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "~/components/icons";
 import { Button } from "~/components/button";
 import { ScrollArea } from "~/components/scroll-area";
+import { Select } from "~/components/select";
 import { t } from "~/lib/i18n";
 import { PAGE_SIZE_OPTIONS, clampPage, pageCount, type PageSize } from "~/lib/pagination";
 import * as m from "~/paraglide/messages";
 
 /** Footer from the appliance data table: page status, first/prev/next/last, rows per page. */
 export function TablePager(props: {
+  leading?: JSX.Element;
   onPage: (page: number) => void;
   onPageSize: (size: PageSize) => void;
   page: number;
@@ -23,6 +26,9 @@ export function TablePager(props: {
   return (
     <ScrollArea class="w-full">
     <div class="flex w-full flex-wrap items-center justify-end gap-3 p-1 sm:gap-4">
+      <Show when={props.leading}>
+        {(leading) => <div class="mr-auto self-start text-sm text-muted-foreground">{leading()}</div>}
+      </Show>
       <div class="text-sm font-medium">
         {t(() => m.table_page_status({ page: current(), total: count() }))}
       </div>
@@ -70,16 +76,12 @@ export function TablePager(props: {
           <ChevronsRight />
         </Button>
       </div>
-      <select
-        aria-label={t(() => m.table_rows_per_page())}
-        class="h-8 w-20 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+      <Select
+        class="w-20"
+        options={PAGE_SIZE_OPTIONS.map((size) => ({ label: String(size), value: String(size) }))}
         value={String(props.pageSize)}
-        onChange={(event) => props.onPageSize(Number(event.currentTarget.value) as PageSize)}
-      >
-        <For each={PAGE_SIZE_OPTIONS}>
-          {(size) => <option value={String(size)}>{size}</option>}
-        </For>
-      </select>
+        onChange={(value) => props.onPageSize(Number(value) as PageSize)}
+      />
     </div>
     </ScrollArea>
   );

@@ -211,6 +211,48 @@ export function resolveRelativeDocLink(href: string, env: WikiEnv): ResolvedWiki
   return { href: routeHref, label: "", workspace: env.workspace, project: env.project, path };
 }
 
+/** Link relativo que termina em `/` é uma pasta da wiki, não uma página. */
+export function resolveRelativeDirLink(
+  href: string,
+  env: WikiEnv,
+): { href: string; prefix: string; project: string; workspace: string } | null {
+  if (!href || !env.pagePath || !env.workspace || !env.project) return null;
+  const lower = href.toLowerCase();
+  if (
+    href.startsWith("/") ||
+    href.startsWith("#") ||
+    href.includes("://") ||
+    lower.startsWith("mailto:") ||
+    lower.startsWith("tel:") ||
+    lower.startsWith("data:") ||
+    lower.startsWith("javascript:")
+  ) {
+    return null;
+  }
+  const pathPart = href.split(/[#?]/)[0] ?? "";
+  if (!pathPart.endsWith("/") || pathPart.includes("\\")) return null;
+
+  const pageDir = env.pagePath.includes("/")
+    ? env.pagePath.slice(0, env.pagePath.lastIndexOf("/"))
+    : "";
+  const segs = pageDir ? pageDir.split("/") : [];
+  for (const seg of pathPart.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (segs.length === 0) return null;
+      segs.pop();
+      continue;
+    }
+    segs.push(seg);
+  }
+  const prefix = segs.length > 0 ? `${segs.join("/")}/` : "";
+  const enc = encodeURIComponent;
+  const base = env.basePath ?? "";
+  const query = prefix ? `?q=${enc(prefix)}` : "";
+  const routeHref = `${base}/s/${enc(env.workspace)}/${enc(env.project)}${query}`;
+  return { href: routeHref, prefix, project: env.project, workspace: env.workspace };
+}
+
 // Regra inline: reescreve `[[…]]` em links de rota ANTES da regra `link`
 // (markdown-it consome `[` como link/ref). Carrega ws/proj/path em data-attrs
 // p/ o handler de clique fazer soft-nav; o href é fallback (nova aba / sem JS).
@@ -254,13 +296,23 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
     // href absoluto começando com `/`, então `resolveRelativeDocLink` os ignora
     // e não há reescrita dupla.) `class="wikilink"` + data-attrs fazem o mesmo
     // soft-nav que os wikilinks (handler em PageReader).
-    const rel = resolveRelativeDocLink(href, (env as WikiEnv) ?? {});
+    const wikiEnv = (env as WikiEnv) ?? {};
+    const rel = resolveRelativeDocLink(href, wikiEnv);
     if (rel) {
       tokens[idx].attrSet("href", rel.href);
       tokens[idx].attrSet("class", "wikilink");
       tokens[idx].attrSet("data-ws", rel.workspace);
       tokens[idx].attrSet("data-proj", rel.project);
       tokens[idx].attrSet("data-path", rel.path);
+    } else {
+      const dir = resolveRelativeDirLink(href, wikiEnv);
+      if (dir) {
+        tokens[idx].attrSet("href", dir.href);
+        tokens[idx].attrSet("class", "wikilink");
+        tokens[idx].attrSet("data-ws", dir.workspace);
+        tokens[idx].attrSet("data-proj", dir.project);
+        tokens[idx].attrSet("data-q", dir.prefix);
+      }
     }
   }
   return defaultLinkOpen(tokens, idx, options, env, self);
@@ -281,6 +333,13 @@ export function stripFrontmatter(source: string): string {
   }
   const after = source.indexOf("\n", end + 1);
   return after === -1 ? "" : source.slice(after + 1).replace(/^\s+/, "");
+}
+
+/** Tira o H1 inicial quando ele repete o título já mostrado no cabeçalho. */
+export function stripLeadingTitle(source: string, title: string): string {
+  const match = /^\s*#\s+(.+?)\s*(?:\n|$)/.exec(source);
+  if (!match || match[1].trim() !== title.trim()) return source;
+  return source.slice(match[0].length).replace(/^\s+/, "");
 }
 
 /** Renderiza markdown→HTML resolvendo wikilinks com o contexto `env`.

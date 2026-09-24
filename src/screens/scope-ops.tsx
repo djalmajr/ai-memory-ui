@@ -1,9 +1,14 @@
 import { useQuery } from "~/lib/query";
+import type { JSX } from "@solidjs/web";
 import { For, Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
+import { Checkbox } from "~/components/checkbox";
+import { ConfirmDialog } from "~/components/confirm-dialog";
+import { Select } from "~/components/select";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
+import { StatCell, StatStrip } from "~/components/stat-strip";
 import { EmptyState } from "~/components/ui-bits";
 import {
   adminAutoImprove,
@@ -49,6 +54,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
   const [reembed, setReembed] = createSignal(false);
   const [allProjects, setAllProjects] = createSignal(false);
   const [sweepDry, setSweepDry] = createSignal(true);
+  const [sweepOpen, setSweepOpen] = createSignal(false);
 
   const lint = createOp<LintReport>();
   const embed = createOp<EmbedReport>();
@@ -92,6 +98,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
       scope={scope()}
       pendingCount={pending$.data?.length}
       heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_ops())} />}
+      screen={t(() => m.nav_ops())}
     >
       <Show
         when={isAdminTier(tier())}
@@ -99,21 +106,22 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
           <EmptyState title={t(() => m.state_empty_title())} body={t(() => m.ops_admin_only())} />
         }
       >
-        <section class="flex flex-col gap-1 rounded-lg border border-hairline p-4">
-          <h2 class="text-sm font-medium">{t(() => m.ops_scope_card())}</h2>
-          <p class="font-mono text-sm">
+        <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+          <div class="min-w-0 flex-1">
+            <h2 class="text-sm font-medium">{t(() => m.ops_scope_card())}</h2>
+            <p class="text-xs text-muted-foreground">{t(() => m.ops_scope_note())}</p>
+          </div>
+          <p class="text-sm">
             {props.workspace}/{props.project}
           </p>
-          <p class="text-xs text-muted-foreground">{t(() => m.ops_scope_note())}</p>
         </section>
 
-        <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{t(() => m.ops_lint())}</h2>
-            <Button type="button" disabled={lint.busy() || !canMutate(tier())} onClick={() => void runLint()}>
-              {t(() => m.ops_run())}
-            </Button>
-          </div>
+        <OpCard
+          description={t(() => m.ops_lint_desc())}
+          pending={lint.busy()}
+          title={t(() => m.ops_lint())}
+          onRun={() => void runLint()}
+        >
           <div class="flex flex-wrap gap-4 text-sm">
             <Flag checked={lintDry()} onChange={setLintDry} label={t(() => m.ops_dry_run())} />
             <Flag checked={noLlm()} onChange={setNoLlm} label={t(() => m.ops_no_llm())} />
@@ -140,15 +148,14 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
               </Show>
             )}
           </Show>
-        </section>
+        </OpCard>
 
-        <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{t(() => m.ops_embed())}</h2>
-            <Button type="button" disabled={embed.busy() || !canMutate(tier())} onClick={() => void runEmbed()}>
-              {t(() => m.ops_run())}
-            </Button>
-          </div>
+        <OpCard
+          description={t(() => m.ops_embed_desc())}
+          pending={embed.busy()}
+          title={t(() => m.ops_embed())}
+          onRun={() => void runEmbed()}
+        >
           <div class="flex flex-wrap gap-4 text-sm">
             <Flag checked={embedDry()} onChange={setEmbedDry} label={t(() => m.ops_dry_run())} />
             <Flag checked={reembed()} onChange={setReembed} label={t(() => m.ops_reembed())} />
@@ -161,76 +168,87 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
           <OpError error={embed.error()} />
           <Show when={embed.result()}>
             {(report) => (
-              <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                <Metric label={t(() => m.ops_embedded())} value={report().embedded} />
-                <Metric label={t(() => m.ops_skipped())} value={report().skipped} />
-                <Metric label={t(() => m.ops_failed())} value={report().failed} />
-                <Metric label={t(() => m.ops_would_embed())} value={report().would_embed} />
-                <div class="col-span-2 text-xs text-muted-foreground">
+              <div class="flex flex-col gap-2">
+                <StatStrip>
+                  <StatCell label={t(() => m.ops_embedded())} value={report().embedded} />
+                  <StatCell label={t(() => m.ops_skipped())} value={report().skipped} />
+                  <StatCell label={t(() => m.ops_failed())} value={report().failed} />
+                  <StatCell label={t(() => m.ops_would_embed())} value={report().would_embed} />
+                </StatStrip>
+                <p class="text-xs text-muted-foreground">
                   {report().provider} · {report().model} · dim {report().dim}
-                </div>
-              </dl>
+                </p>
+              </div>
             )}
           </Show>
-        </section>
+        </OpCard>
 
-        <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{t(() => m.ops_sweep())}</h2>
-            <Button type="button" disabled={sweep.busy() || !canMutate(tier())} onClick={() => void runSweep()}>
-              {t(() => m.ops_run())}
-            </Button>
-          </div>
+        <OpCard
+          description={t(() => m.ops_sweep_desc())}
+          pending={sweep.busy()}
+          title={t(() => m.ops_sweep())}
+          onRun={() => {
+            if (sweepDry()) void runSweep();
+            else setSweepOpen(true);
+          }}
+        >
+            <Show when={sweepOpen()}>
+              <ConfirmDialog
+                body={t(() => m.ops_sweep_confirm_body())}
+                confirmLabel={t(() => m.ops_run())}
+                destructive
+                error={sweep.error()}
+                pending={sweep.busy()}
+                title={t(() => m.ops_sweep())}
+                onClose={() => setSweepOpen(false)}
+                onConfirm={() => {
+                  void Promise.resolve(runSweep()).then(() => {
+                    if (!sweep.error()) setSweepOpen(false);
+                  });
+                }}
+              />
+            </Show>
           <Flag checked={sweepDry()} onChange={setSweepDry} label={t(() => m.ops_dry_run())} />
           <OpError error={sweep.error()} />
           <Show when={sweep.result()}>
             {(report) => (
-              <div class="flex flex-col gap-2 text-sm">
-                <dl class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Metric label={t(() => m.ops_candidates())} value={report().candidates_evaluated} />
-                  <Metric label={t(() => m.ops_evicted())} value={report().evicted.length} />
-                  <Metric label={t(() => m.ops_expired())} value={report().expired.length} />
-                  <Metric label={t(() => m.ops_hard_deleted())} value={report().hard_deleted} />
-                </dl>
+              <div class="flex flex-col gap-2">
+                <StatStrip>
+                  <StatCell label={t(() => m.ops_candidates())} value={report().candidates_evaluated} />
+                  <StatCell label={t(() => m.ops_evicted())} value={report().evicted.length} />
+                  <StatCell label={t(() => m.ops_expired())} value={report().expired.length} />
+                  <StatCell label={t(() => m.ops_hard_deleted())} value={report().hard_deleted} />
+                </StatStrip>
                 <p class="text-xs text-muted-foreground">dry_run={String(report().dry_run)}</p>
               </div>
             )}
           </Show>
-        </section>
+        </OpCard>
 
-        <section class="flex flex-col gap-3 rounded-lg border border-hairline p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{t(() => m.ops_improve())}</h2>
-            <Button
-              type="button"
-             
-              disabled={improve.busy() || !sessionId() || !canMutate(tier())}
-              title={!sessionId() ? t(() => m.ops_session_hint()) : undefined}
-              onClick={() => void runImprove()}
-            >
-              {t(() => m.ops_run())}
-            </Button>
-          </div>
+        <OpCard
+          description={t(() => m.ops_improve_desc())}
+          disabled={!sessionId()}
+          pending={improve.busy()}
+          title={t(() => m.ops_improve())}
+          onRun={() => void runImprove()}
+        >
           <label class="flex max-w-md flex-col gap-1.5 text-sm font-medium">
             {t(() => m.ops_session())}
             <Show when={sessions$.isPending}>
               <Skeleton class="h-8 w-full rounded-md" />
             </Show>
             <Show when={!sessions$.isPending}>
-              <select class="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+              <Select
+                options={[
+                  { label: t(() => m.ops_session_hint()), value: "" },
+                  ...(sessions$.data?.sessions ?? []).map((row) => ({
+                    label: `${row.session_id.slice(0, 8)} · ${row.agent_kind} · ${formatDateTime(fromRfc3339(row.started_at))}`,
+                    value: row.session_id,
+                  })),
+                ]}
                 value={sessionId()}
-                onChange={(event) => setSessionId(event.currentTarget.value)}
-              >
-                <option value="">{t(() => m.ops_session_hint())}</option>
-                <For each={sessions$.data?.sessions ?? []}>
-                  {(row) => (
-                    <option value={row.session_id}>
-                      {row.session_id.slice(0, 8)} · {row.agent_kind} ·{" "}
-                      {formatDateTime(fromRfc3339(row.started_at))}
-                    </option>
-                  )}
-                </For>
-              </select>
+                onChange={setSessionId}
+              />
             </Show>
           </label>
           <Show when={!sessionId()}>
@@ -255,7 +273,7 @@ export function ScopeOpsScreen(props: { workspace: string; project: string }) {
               </div>
             )}
           </Show>
-        </section>
+        </OpCard>
       </Show>
     </Shell>
   );
@@ -287,26 +305,42 @@ function createOp<T>() {
   return { busy, result, error, run };
 }
 
-function Flag(props: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+function OpCard(props: {
+  children?: JSX.Element;
+  description: string;
+  disabled?: boolean;
+  onRun: () => void;
+  pending: boolean;
+  title: string;
+}) {
   return (
-    <label class="flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        class="size-4 accent-primary"
-        checked={props.checked}
-        onChange={(event) => props.onChange(event.currentTarget.checked)}
-      />
-      {props.label}
-    </label>
+    <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0 flex-1">
+          <h2 class="text-sm font-medium">{props.title}</h2>
+          <p class="text-xs text-muted-foreground">{props.description}</p>
+        </div>
+        <Button
+          class="shrink-0"
+          disabled={props.disabled || props.pending || !canMutate(tier())}
+          type="button"
+          variant="outline"
+          onClick={props.onRun}
+        >
+          {props.pending ? t(() => m.ops_running()) : t(() => m.ops_execute())}
+        </Button>
+      </div>
+      {props.children}
+    </section>
   );
 }
 
-function Metric(props: { label: string; value: number }) {
+function Flag(props: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
-    <div>
-      <dt class="text-xs text-muted-foreground">{props.label}</dt>
-      <dd class="tabular-nums">{props.value}</dd>
-    </div>
+    <label class="flex items-center gap-2 text-sm">
+      <Checkbox checked={props.checked} onChange={props.onChange} />
+      <span>{props.label}</span>
+    </label>
   );
 }
 

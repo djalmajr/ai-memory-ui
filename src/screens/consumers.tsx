@@ -5,6 +5,7 @@ import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/badge";
 import { Ban, CircleHelp, Plus, RefreshCw } from "~/components/icons";
 import { Button } from "~/components/button";
+import { Tooltip } from "~/components/tooltip";
 import { DataGrid } from "~/components/data-grid";
 import { Checkbox } from "~/components/checkbox";
 import { Input } from "~/components/input";
@@ -43,15 +44,7 @@ type Dialog =
   | { kind: "secret"; id: string; token: string; source: "create" | "rotate"; revokeWarning?: string };
 
 export function ConsumersScreen() {
-  return (
-    <Shell
-      level="server"
-      heading={<span>{t(() => m.nav_consumers())}</span>}
-      description={<span>{t(() => m.consumers_subtitle())}</span>}
-    >
-      <ConsumersBody />
-    </Shell>
-  );
+  return <ConsumersBody />;
 }
 
 function isUnavailable(error: unknown): boolean {
@@ -85,6 +78,17 @@ function ConsumersBody() {
   );
 
   return (
+    <Shell
+      description={<span>{t(() => m.consumers_subtitle())}</span>}
+      heading={<span>{t(() => m.nav_consumers())}</span>}
+      screen={t(() => m.nav_consumers())}
+      help={
+        <Show when={unavailable()}>
+          <KeysUnavailableHelp />
+        </Show>
+      }
+      level="server"
+    >
     <div class="flex flex-col gap-4">
       <Show when={rowError()}>
         {(message) => (
@@ -116,11 +120,6 @@ function ConsumersBody() {
 
       <Show when={!listQ.isPending && (unavailable() || !listQ.isError)}>
         <DataGrid
-          beforeSort={
-            <Show when={unavailable()}>
-              <KeysUnavailableHelp />
-            </Show>
-          }
           action={
             <Button disabled={unavailable() || !canMutate(tier())} onClick={() => setDialog({ kind: "create" })}>
               <Plus /> {t(() => m.consumers_new())}
@@ -132,12 +131,12 @@ function ConsumersBody() {
           columns={[
             { id: "id", label: t(() => m.consumers_col_id()), class: "w-[140px] font-mono", search: (row) => `${row.id} ${row.preview} ${row.actor_user}`, sortValue: (row) => row.id, cell: (row) => row.id },
             { id: "preview", label: t(() => m.consumers_col_preview()), class: "w-[140px] font-mono text-xs", cell: (row) => row.preview },
-            { id: "actor", label: t(() => m.consumers_col_actor()), class: "w-[140px] font-mono", sortValue: (row) => row.actor_user, cell: (row) => row.actor_user },
+            { id: "actor", label: t(() => m.consumers_col_actor()), class: "w-[140px]", sortValue: (row) => row.actor_user, cell: (row) => row.actor_user },
             { id: "owner", label: t(() => m.consumers_col_owner()), class: "w-[200px]", cell: (row) => <OwnerCell owner={row.owner} /> },
             { id: "scopes", label: t(() => m.consumers_col_scopes()), class: "w-[160px]", cell: (row) => <div class="flex flex-wrap gap-1"><For each={row.scopes}>{(scope) => <ScopeChip scope={scope} />}</For></div> },
             { id: "state", label: t(() => m.consumers_col_state()), class: "w-[100px]", cell: (row) => <StateBadge row={row} /> },
-            { id: "created", label: t(() => m.consumers_col_created()), class: "w-[120px] text-muted-foreground", sortValue: (row) => row.created_at, cell: (row) => formatDateShort(fromUnixSeconds(row.created_at)?.toISOString() ?? null) },
-            { id: "used", label: t(() => m.consumers_col_last_used()), class: "w-[140px] text-muted-foreground", cell: (row) => (row.last_used_at === null ? "—" : formatRelative(fromUnixSeconds(row.last_used_at))) },
+            { id: "created", label: t(() => m.consumers_col_created()), class: "w-[120px]", sortValue: (row) => row.created_at, cell: (row) => formatDateShort(fromUnixSeconds(row.created_at)?.toISOString() ?? null) },
+            { id: "used", label: t(() => m.consumers_col_last_used()), class: "w-[140px]", cell: (row) => (row.last_used_at === null ? "—" : formatRelative(fromUnixSeconds(row.last_used_at))) },
             {
               id: "actions",
               label: "",
@@ -145,12 +144,16 @@ function ConsumersBody() {
               hideable: false,
               cell: (row) => (
                 <div class="flex gap-0.5">
-                  <Button aria-label={t(() => m.consumers_action_rotate())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" title={t(() => m.consumers_action_rotate())} variant="ghost" onClick={() => setDialog({ kind: "rotate", key: row })}>
-                    <RefreshCw />
-                  </Button>
-                  <Button aria-label={t(() => m.consumers_action_revoke())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" title={t(() => m.consumers_action_revoke())} variant="ghost" onClick={() => setDialog({ kind: "revoke", key: row })}>
-                    <Ban />
-                  </Button>
+                  <Tooltip content={t(() => m.consumers_action_rotate())}>
+                    <Button aria-label={t(() => m.consumers_action_rotate())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" variant="ghost" onClick={() => setDialog({ kind: "rotate", key: row })}>
+                      <RefreshCw />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={t(() => m.consumers_action_revoke())}>
+                    <Button aria-label={t(() => m.consumers_action_revoke())} disabled={busy() === row.id || !canMutate(tier())} size="icon-sm" variant="ghost" onClick={() => setDialog({ kind: "revoke", key: row })}>
+                      <Ban />
+                    </Button>
+                  </Tooltip>
                 </div>
               ),
             },
@@ -240,6 +243,7 @@ function ConsumersBody() {
         }}
       </Show>
     </div>
+    </Shell>
   );
 }
 
@@ -251,7 +255,7 @@ function KeysUnavailableHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.consumers_unavailable_title())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -262,7 +266,7 @@ function KeysUnavailableHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 flex w-80 flex-col gap-2 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -687,13 +691,10 @@ function ConfirmNameDialog(props: {
   onClose: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  const [typed, setTyped] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
-  const matches = () => typed() === props.target;
 
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (!matches() || props.pending) return;
+  const submit = async () => {
+    if (props.pending) return;
     setError(null);
     try {
       await props.onConfirm();
@@ -704,16 +705,8 @@ function ConfirmNameDialog(props: {
 
   return (
     <Modal title={props.title} onClose={props.onClose}>
-      <form class="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+      <div class="flex flex-col gap-4">
         <p class="text-xs text-muted-foreground">{props.body}</p>
-        <Input
-          autofocus
-          autocomplete="off"
-          spellcheck={false}
-          class="font-mono"
-          value={typed()}
-          onInput={(event) => setTyped(event.currentTarget.value)}
-        />
         <Show when={error()}>
           {(message) => (
             <p class="text-xs text-destructive" role="alert">
@@ -726,15 +719,15 @@ function ConfirmNameDialog(props: {
             {t(() => m.consumers_cancel())}
           </Button>
           <Button
-            type="submit"
-           
+            type="button"
             variant={props.destructive ? "destructive" : "default"}
-            disabled={!matches() || props.pending}
+            disabled={props.pending}
+            onClick={() => void submit()}
           >
             {props.confirmLabel}
           </Button>
         </div>
-      </form>
+      </div>
     </Modal>
   );
 }

@@ -2,11 +2,13 @@ import { useQuery } from "~/lib/query";
 import { Show } from "solid-js";
 
 import { Badge } from "~/components/badge";
+import { Tooltip } from "~/components/tooltip";
 import { Button } from "~/components/button";
 import { DataGrid } from "~/components/data-grid";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { Metric } from "~/components/ui-bits";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
+import { StatCell, StatStrip } from "~/components/stat-strip";
 import { adminStatus } from "~/lib/admin-api";
 import type {
   DerivedIndexStatus,
@@ -87,13 +89,13 @@ function ProviderCard(props: { role: ProviderRoleHealthSnapshot; title: string }
       </div>
       <Show when={props.role.model}>
         {(model) => (
-          <p class="font-mono text-sm">
+          <p class="text-sm">
             {t(() => m.config_col_model())}: {model()}
           </p>
         )}
       </Show>
       <Show when={props.role.dim != null}>
-        <p class="font-mono text-sm">
+        <p class="text-sm">
           {t(() => m.config_col_dim())}: {props.role.dim}
         </p>
       </Show>
@@ -107,7 +109,12 @@ function ConfigBody(props: { status: StatusReport }) {
   const embedding = () => props.status.providers.embedding;
 
   return (
-    <div class="flex flex-col gap-4">
+    <Tabs defaultValue="general">
+      <TabsList>
+        <TabsTrigger value="general">{t(() => m.config_tab_general())}</TabsTrigger>
+        <TabsTrigger value="derived">{t(() => m.config_derived())}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="general" class="flex flex-col gap-4">
       <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
         <h2 class="text-sm font-medium">{t(() => m.config_identity())}</h2>
         <IdentityRow label={t(() => m.config_version())} value={props.status.version} />
@@ -116,64 +123,87 @@ function ConfigBody(props: { status: StatusReport }) {
         <IdentityRow label={t(() => m.config_db_path())} value={props.status.db_path} />
       </section>
 
-      <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-        <h2 class="text-sm font-medium">{t(() => m.config_counts())}</h2>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Metric label={t(() => m.config_count_pages())} value={counts().pages_latest} />
-          <Metric label={t(() => m.config_count_versions())} value={counts().pages_all} />
-          <Metric label={t(() => m.config_count_sessions())} value={counts().sessions} />
-          <Metric label={t(() => m.config_count_observations())} value={counts().observations} />
-        </div>
+      <section class="flex flex-col gap-1.5">
+        <h2 class="text-sm font-semibold">{t(() => m.config_counts())}</h2>
+        <StatStrip>
+          <StatCell label={t(() => m.config_count_pages())} value={counts().pages_latest} />
+          <StatCell label={t(() => m.config_count_versions())} value={counts().pages_all} />
+          <StatCell label={t(() => m.config_count_sessions())} value={counts().sessions} />
+          <StatCell label={t(() => m.config_count_observations())} value={counts().observations} />
+        </StatStrip>
       </section>
 
       <Show when={props.status.storage}>
         {(storage) => (
-          <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-            <h2 class="text-sm font-medium">{t(() => m.config_storage())}</h2>
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Metric label={t(() => m.config_disk_free())} value={formatBytes(storage().data_dir_free_bytes)} />
-              <Metric label={t(() => m.config_database_bytes())} value={formatBytes(storage().database_bytes)} />
-              <Metric label={t(() => m.config_reclaimable_bytes())} value={formatBytes(storage().reclaimable_bytes)} />
+          <>
+          <section class="flex flex-col gap-1.5">
+            <h2 class="text-sm font-semibold">{t(() => m.config_storage())}</h2>
+            <StatStrip>
+              <StatCell
+                label={t(() => m.config_disk_free())}
+                sub={
+                  storage().data_dir_free_bytes === null
+                    ? t(() => m.overview_disk_unknown())
+                    : t(() => m.overview_disk_sub())
+                }
+                value={formatBytes(storage().data_dir_free_bytes)}
+              />
+              <StatCell
+                label={t(() => m.config_database_bytes())}
+                sub={t(() => m.overview_database_sub())}
+                value={formatBytes(storage().database_bytes)}
+              />
+              <StatCell
+                label={t(() => m.config_reclaimable_bytes())}
+                sub={t(() => m.overview_reclaimable_sub())}
+                value={formatBytes(storage().reclaimable_bytes)}
+              />
               <Show when={props.status.write_queue}>
                 {(queue) => (
-                  <Metric
+                  <StatCell
                     label={t(() => m.config_write_queue())}
                     value={`${queue()[0]} / ${queue()[1]}`}
                   />
                 )}
               </Show>
-            </div>
-            <Show when={storage().data_dir_free_bytes === null}>
-              <p class="text-xs text-muted-foreground">{t(() => m.overview_disk_unknown())}</p>
-            </Show>
-            <Show when={props.status.wiki_format}>
-              {(format) => (
-                <div class="flex flex-col gap-2">
-                  <IdentityRow
-                    label={t(() => m.config_okf())}
-                    value={format().okf_migrated ? t(() => m.config_okf_yes()) : t(() => m.config_okf_no())}
-                  />
-                  <Show when={format().backup_archive}>
-                    {(archive) => (
-                      <IdentityRow label={t(() => m.config_backup_archive())} value={archive()} />
-                    )}
-                  </Show>
-                </div>
-              )}
-            </Show>
+            </StatStrip>
           </section>
+          <Show when={props.status.wiki_format}>
+            {(format) => (
+              <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
+                <h2 class="text-sm font-medium">{t(() => m.config_okf())}</h2>
+                <p class="text-sm">
+                  {format().okf_migrated ? t(() => m.config_okf_yes()) : t(() => m.config_okf_no())}
+                </p>
+                <Show when={format().backup_archive}>
+                  {(archive) => (
+                    <IdentityRow label={t(() => m.config_backup_archive())} value={archive()} />
+                  )}
+                </Show>
+              </section>
+            )}
+          </Show>
+        </>
         )}
       </Show>
 
-      <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-        <h2 class="text-sm font-medium">{t(() => m.config_derived())}</h2>
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Metric label={t(() => m.config_derived_pages_fts())} value={derived().pagesFts} />
-          <Metric label={t(() => m.config_derived_obs_fts())} value={derived().observationsFts} />
-          <Metric label={t(() => m.config_derived_links())} value={derived().links} />
-          <Metric label={t(() => m.config_derived_embeddings())} value={derived().embeddings} />
+      <section class="flex flex-col gap-4">
+        <h2 class="text-sm font-medium">{t(() => m.config_providers())}</h2>
+        <div class="flex flex-col gap-4 sm:flex-row">
+          <ProviderCard role={props.status.providers.llm} title={t(() => m.config_provider_llm())} />
+          <ProviderCard role={props.status.providers.embedding} title={t(() => m.config_provider_embedding())} />
         </div>
-        <h3 class="text-xs font-medium text-muted-foreground">{t(() => m.config_triples())}</h3>
+      </section>
+
+      <p class="text-sm text-muted-foreground">{t(() => m.config_readonly_note())}</p>
+      </TabsContent>
+      <TabsContent value="derived" class="flex flex-col gap-4">
+        <StatStrip>
+          <StatCell label={t(() => m.config_derived_pages_fts())} value={derived().pagesFts} />
+          <StatCell label={t(() => m.config_derived_obs_fts())} value={derived().observationsFts} />
+          <StatCell label={t(() => m.config_derived_links())} value={derived().links} />
+          <StatCell label={t(() => m.config_derived_embeddings())} value={derived().embeddings} />
+        </StatStrip>
         <DataGrid
           empty={t(() => m.config_empty_triples())}
           items={derived().triples}
@@ -181,7 +211,6 @@ function ConfigBody(props: { status: StatusReport }) {
             {
               id: "provider",
               label: t(() => m.config_col_provider()),
-              class: "font-mono text-xs",
               search: (triple) => `${triple.provider} ${triple.model}`,
               sortValue: (triple) => triple.provider,
               cell: (triple) => triple.provider,
@@ -189,14 +218,13 @@ function ConfigBody(props: { status: StatusReport }) {
             {
               id: "model",
               label: t(() => m.config_col_model()),
-              class: "font-mono text-xs",
               sortValue: (triple) => triple.model,
               cell: (triple) => triple.model,
             },
             {
               id: "dim",
               label: t(() => m.config_col_dim()),
-              class: "w-20 font-mono text-xs",
+              class: "w-20 tabular-nums",
               sortValue: (triple) => triple.dim,
               cell: (triple) => triple.dim,
             },
@@ -214,26 +242,16 @@ function ConfigBody(props: { status: StatusReport }) {
               hideable: false,
               cell: (triple) => (
                 <Show when={tripleIsStale(triple, embedding())}>
-                  <Badge title={t(() => m.config_stale_hint())} variant="warning">
-                    {t(() => m.config_stale_triple())}
-                  </Badge>
+                  <Tooltip content={t(() => m.config_stale_hint())}>
+                    <Badge variant="warning">{t(() => m.config_stale_triple())}</Badge>
+                  </Tooltip>
                 </Show>
               ),
             },
           ]}
         />
-      </section>
-
-      <section class="flex flex-col gap-4">
-        <h2 class="text-sm font-medium">{t(() => m.config_providers())}</h2>
-        <div class="flex flex-col gap-4 sm:flex-row">
-          <ProviderCard role={props.status.providers.llm} title={t(() => m.config_provider_llm())} />
-          <ProviderCard role={props.status.providers.embedding} title={t(() => m.config_provider_embedding())} />
-        </div>
-      </section>
-
-      <p class="text-sm text-muted-foreground">{t(() => m.config_readonly_note())}</p>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -247,6 +265,7 @@ export function ConfigScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_config())}</span>}
+      screen={t(() => m.nav_config())}
       description={<span>{t(() => m.config_subtitle())}</span>}
     >
       <Show when={q.isPending && q.data === undefined}>

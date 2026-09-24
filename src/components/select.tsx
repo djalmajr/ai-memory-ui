@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 
 import { Check, ChevronDown } from "~/components/icons";
 import { ScrollArea } from "~/components/scroll-area";
@@ -15,13 +15,28 @@ import { cn } from "~/lib/utils";
 // as the popover: `transform` is the position, not a motion.
 
 export function Select<T extends string>(props: {
+  class?: string;
   disabled?: boolean;
   onChange: (value: T) => void;
   options: { label: string; value: T }[];
+  placeholder?: string;
+  searchable?: boolean;
   value: T;
 }) {
   const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal("");
   const [width, setWidth] = createSignal(0);
+  const visible = () => {
+    const text = query().trim().toLowerCase();
+    if (!props.searchable || text.length === 0) return props.options;
+    return props.options.filter((option) => option.label.toLowerCase().includes(text));
+  };
+  createEffect(
+    () => open(),
+    (isOpen) => {
+      if (isOpen) setQuery("");
+    },
+  );
   let anchor: HTMLDivElement | undefined;
   const measure = () => {
     if (anchor) setWidth(anchor.offsetWidth);
@@ -29,7 +44,7 @@ export function Select<T extends string>(props: {
   const label = () => props.options.find((option) => option.value === props.value)?.label ?? "";
 
   return (
-    <div class="w-full" ref={anchor} onPointerDown={measure}>
+    <div class={cn("w-full", props.class)} ref={anchor} onPointerDown={measure}>
       <PopoverRoot gutter={4} open={open()} placement="bottom-start" onOpenChange={setOpen}>
         <PopoverTrigger
           aria-haspopup="listbox"
@@ -37,7 +52,9 @@ export function Select<T extends string>(props: {
           disabled={props.disabled}
           onClick={measure}
         >
-          <span class="line-clamp-1 flex-1 text-left">{label()}</span>
+          <span class={cn("line-clamp-1 flex-1 text-left", !label() && "text-muted-foreground")}>
+            {label() || props.placeholder}
+          </span>
           <ChevronDown class="text-muted-foreground" size={16} />
         </PopoverTrigger>
         <PopoverPortal>
@@ -46,8 +63,17 @@ export function Select<T extends string>(props: {
             role="listbox"
             style={{ width: width() > 0 ? `${width()}px` : undefined }}
           >
+            <Show when={props.searchable}>
+              <input
+                class="h-8 w-full border-b border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground"
+                placeholder={props.placeholder}
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                onPointerDown={(event) => event.stopPropagation()}
+              />
+            </Show>
             <ScrollArea class="max-h-72 p-1">
-            <For each={props.options}>
+            <For each={visible()}>
               {(option) => {
                 const selected = () => option.value === props.value;
                 return (

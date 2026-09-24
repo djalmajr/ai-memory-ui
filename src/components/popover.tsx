@@ -77,6 +77,9 @@ function Root(props: {
       const onPointerDown = (event: PointerEvent) => {
         const target = event.target as Node;
         if (panel.contains(target) || anchor.contains(target)) return;
+        // A portaled select menu is not inside this panel. Keep the parent
+        // open while the pointer is in any popover, including that menu.
+        if (target instanceof Element && target.closest("[data-slot=popover-content]")) return;
         props.onOpenChange(false);
       };
       const onKeyDown = (event: KeyboardEvent) => {
@@ -153,6 +156,7 @@ function Content(props: JSX.HTMLAttributes<HTMLDivElement>) {
         props.class,
       )}
       data-expanded=""
+      data-slot="popover-content"
       id={context.contentId}
       role="dialog"
       tabindex={-1}

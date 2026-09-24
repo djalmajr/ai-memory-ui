@@ -3,6 +3,7 @@ import { LogOut, Moon, Sun } from "~/components/icons";
 import { For, Show, createSignal, onSettled } from "solid-js";
 
 import { Button } from "~/components/button";
+import { Tooltip } from "~/components/tooltip";
 import { buildLogoutUrl, fetchCurrentUser, type CurrentUser } from "~/lib/api";
 import { locales, switchLocale, t, useLocale } from "~/lib/i18n";
 import type { Locale } from "~/lib/i18n";
@@ -106,27 +107,28 @@ export function Avatar() {
   };
   return (
     <div class="relative">
+      <Tooltip content={name() || undefined}>
       <button
         aria-label={name() || "Conta"}
         class="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-primary outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
-        title={name() || undefined}
         type="button"
         onClick={() => setOpen((value) => !value)}
       >
         {initials()}
       </button>
+      </Tooltip>
       <Show when={open()}>
         <div class="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div class="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
           <Show when={name()}>
             <div class="border-b px-2 py-1.5">
-              <p class="truncate text-sm font-medium" title={name()}>
-                {name()}
-              </p>
+              <Tooltip class="block min-w-0" content={name()}>
+                <p class="truncate text-sm font-medium">{name()}</p>
+              </Tooltip>
               <Show when={currentUser()?.email && currentUser()?.email !== name()}>
-                <p class="truncate text-xs text-muted-foreground" title={currentUser()?.email}>
-                  {currentUser()?.email}
-                </p>
+                <Tooltip class="block min-w-0" content={currentUser()?.email}>
+                  <p class="truncate text-xs text-muted-foreground">{currentUser()?.email}</p>
+                </Tooltip>
               </Show>
             </div>
           </Show>

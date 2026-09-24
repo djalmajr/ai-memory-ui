@@ -64,6 +64,17 @@ describe("renderMarkdown wikilinks", () => {
     expect(html).toContain(">notes/foo</a>");
   });
 
+  it("sends a directory link to the wiki list, not a page route", () => {
+    const html = renderMarkdown("see [_lint/](_lint/) and [_rules/](./_rules/)", {
+      ...ENV,
+      pagePath: "README.md",
+    });
+    expect(html).toContain('href="/s/default/scratch?q=_lint%2F"');
+    expect(html).toContain('data-q="_lint/"');
+    expect(html).toContain('href="/s/default/scratch?q=_rules%2F"');
+    expect(html).not.toContain("/pages/_lint");
+  });
+
   it("does not linkify inside fenced or inline code", () => {
     expect(renderMarkdown("```\n[[notes/foo]]\n```", ENV)).not.toContain("<a ");
     expect(renderMarkdown("use `[[notes/foo]]` literally", ENV)).not.toContain("<a ");

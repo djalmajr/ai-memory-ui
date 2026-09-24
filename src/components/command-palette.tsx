@@ -12,6 +12,7 @@ import {
 } from "~/components/icons";
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js";
 
+import { Tooltip } from "~/components/tooltip";
 import { KindBadge } from "~/components/ui-bits";
 import { ScrollArea } from "~/components/scroll-area";
 import { HighlightMatch } from "~/components/workspace-cascader";
@@ -67,6 +68,12 @@ export function CommandPalette(props: {
   });
 
   function onKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      props.onClose();
+      return;
+    }
     const items = props.results;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -93,6 +100,7 @@ export function CommandPalette(props: {
         <div
           class="flex max-h-[70vh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-2xl"
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={onKeyDown}
         >
           <div class="flex items-center gap-2 border-b px-3 py-2.5">
             <SearchScopeCascader
@@ -109,7 +117,6 @@ export function CommandPalette(props: {
               placeholder={t(() => m.search_placeholder())}
               value={props.query}
               onInput={(event) => props.onInput(event.currentTarget.value)}
-              onKeyDown={onKeyDown}
             />
             <Show when={props.query.length > 0}>
               <button
@@ -161,12 +168,11 @@ export function CommandPalette(props: {
                         <span class="flex min-w-0 items-center gap-2">
                           <KindBadge kind={hit.kind} />
                           <strong class="min-w-0 flex-1 truncate text-sm leading-tight">{hit.title}</strong>
-                          <span
-                            class="shrink-0 font-mono text-[0.65rem] text-muted-foreground"
-                            title={`rank ${hit.rank}`}
-                          >
-                            {formatRank(hit.rank)}
-                          </span>
+                          <Tooltip content={`rank ${hit.rank}`}>
+                            <span class="shrink-0 text-[0.65rem] text-muted-foreground">
+                              {formatRank(hit.rank)}
+                            </span>
+                          </Tooltip>
                         </span>
                         <small class="truncate text-xs text-muted-foreground">
                           {hit.workspace}/{hit.project} ·{" "}

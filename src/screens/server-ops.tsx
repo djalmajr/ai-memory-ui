@@ -1,14 +1,17 @@
+import { useQuery } from "~/lib/query";
 import { Show, createSignal } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
 import { Button } from "~/components/button";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { Checkbox } from "~/components/checkbox";
 import { DataGrid } from "~/components/data-grid";
 import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
+import { Select } from "~/components/select";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { adminBackup, adminCheckpoints, adminCommit, adminCompact, adminExportOkf, adminReorg, type CompactReport } from "~/lib/admin-api";
+import { adminBackup, adminCheckpoints, adminCommit, adminCompact, adminExportOkf, adminProjects, adminReorg, type CompactReport } from "~/lib/admin-api";
 import type { Checkpoint, CommitResult } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
 import { canMutate, tier } from "~/lib/auth";
@@ -122,13 +125,19 @@ export function ServerOpsScreen() {
   const [reorgError, setReorgError] = createSignal<string | null>(null);
   const [reorgReport, setReorgReport] = createSignal<unknown>(null);
 
-  const [compactArmed, setCompactArmed] = createSignal(false);
+  const [compactOpen, setCompactOpen] = createSignal(false);
+  const [reorgOpen, setReorgOpen] = createSignal(false);
   const [compactPending, setCompactPending] = createSignal(false);
   const [compactError, setCompactError] = createSignal<string | null>(null);
   const [compactReport, setCompactReport] = createSignal<CompactReport | null>(null);
 
-  const [exportWs, setExportWs] = createSignal("default");
+  const [exportWs, setExportWs] = createSignal("");
   const [exportProject, setExportProject] = createSignal("");
+  const projects$ = useQuery(() => ({
+    queryFn: adminProjects,
+    queryKey: ["admin", "projects"],
+  }));
+  const exportKey = () => (exportProject() ? `${exportWs()}\t${exportProject()}` : "");
   const [exportPending, setExportPending] = createSignal(false);
   const [exportError, setExportError] = createSignal<string | null>(null);
   const [exportName, setExportName] = createSignal<string | null>(null);
@@ -182,8 +191,10 @@ export function ServerOpsScreen() {
     setReorgError(null);
     try {
       setReorgReport(await adminReorg(dryRun()));
+      return true;
     } catch (error) {
       setReorgError(failMessage(error));
+      return false;
     } finally {
       setReorgPending(false);
     }
@@ -194,9 +205,10 @@ export function ServerOpsScreen() {
     setCompactError(null);
     try {
       setCompactReport(await adminCompact());
-      setCompactArmed(false);
+      return true;
     } catch (error) {
       setCompactError(failMessage(error));
+      return false;
     } finally {
       setCompactPending(false);
     }
@@ -223,6 +235,7 @@ export function ServerOpsScreen() {
     <Shell
       level="server"
       heading={<span>{t(() => m.nav_ops())}</span>}
+      screen={t(() => m.nav_ops())}
       description={<span>{t(() => m.ops_subtitle())}</span>}
     >
       <div class="flex flex-col gap-4">
@@ -313,7 +326,10 @@ export function ServerOpsScreen() {
           description={t(() => m.ops_reorg_desc())}
           pending={reorgPending()}
           title={t(() => m.ops_reorg_title())}
-          onRun={() => void runReorg()}
+          onRun={() => {
+            if (dryRun()) void runReorg();
+            else setReorgOpen(true);
+          }}
         >
           <label class="flex items-center gap-2 text-sm">
             <Checkbox checked={dryRun()} onChange={(checked) => setDryRun(checked)} />
@@ -342,22 +358,36 @@ export function ServerOpsScreen() {
               <h2 class="text-sm font-medium">{t(() => m.ops_compact_title())}</h2>
               <p class="text-xs text-muted-foreground">{t(() => m.ops_compact_desc())}</p>
             </div>
-            <Show
-              when={compactArmed()}
-              fallback={
-                <Button
-                  disabled={!canMutate(tier())}
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCompactArmed(true)}
-                >
-                  {t(() => m.ops_execute())}
-                </Button>
-              }
+            <Button
+              disabled={!canMutate(tier())}
+              type="button"
+              variant="outline"
+              onClick={() => setCompactOpen(true)}
             >
-              <Button disabled={compactPending() || !canMutate(tier())} type="button" variant="outline" onClick={() => void runCompact()}>
-                {compactPending() ? t(() => m.ops_running()) : t(() => m.ops_compact_confirm())}
-              </Button>
+              {t(() => m.ops_execute())}
+            </Button>
+            <Show when={compactOpen()}>
+              <ConfirmDialog
+                body={t(() => m.ops_compact_desc())}
+                confirmLabel={t(() => m.ops_compact_confirm())}
+                error={compactError()}
+                pending={compactPending()}
+                title={t(() => m.ops_compact_title())}
+                onClose={() => setCompactOpen(false)}
+                onConfirm={() => void runCompact().then((ok) => { if (ok) setCompactOpen(false); })}
+              />
+            </Show>
+            <Show when={reorgOpen()}>
+              <ConfirmDialog
+                body={t(() => m.ops_reorg_confirm_body())}
+                confirmLabel={t(() => m.ops_run())}
+                destructive
+                error={reorgError()}
+                pending={reorgPending()}
+                title={t(() => m.ops_reorg_title())}
+                onClose={() => setReorgOpen(false)}
+                onConfirm={() => void runReorg().then((ok) => { if (ok) setReorgOpen(false); })}
+              />
             </Show>
           </div>
           <Show when={compactError()}>
@@ -397,18 +427,21 @@ export function ServerOpsScreen() {
               {exportPending() ? t(() => m.ops_running()) : t(() => m.ops_execute())}
             </Button>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <Input
-              placeholder={t(() => m.ops_export_okf_workspace())}
-              value={exportWs()}
-              onInput={(event) => setExportWs(event.currentTarget.value)}
-            />
-            <Input
-              placeholder={t(() => m.ops_export_okf_project())}
-              value={exportProject()}
-              onInput={(event) => setExportProject(event.currentTarget.value)}
-            />
-          </div>
+          <Select
+            class="max-w-sm"
+            options={(projects$.data ?? []).map((project) => ({
+              label: `${project.workspace_name} / ${project.project_name}`,
+              value: `${project.workspace_name}\t${project.project_name}`,
+            }))}
+            placeholder={t(() => m.ops_export_okf_project())}
+            searchable
+            value={exportKey()}
+            onChange={(value) => {
+              const [workspace, project] = value.split("\t");
+              setExportWs(workspace ?? "");
+              setExportProject(project ?? "");
+            }}
+          />
           <Show when={exportError()}>
             {(message) => (
               <p class="text-sm text-destructive" role="alert">

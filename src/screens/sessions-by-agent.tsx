@@ -43,7 +43,7 @@ function SessionsHelp() {
       <Button
         aria-describedby={id}
         aria-label={t(() => m.sessions_help())}
-        size="icon-sm"
+        size="icon-xs"
         type="button"
         variant="ghost"
         onBlur={() => setOpen(false)}
@@ -54,7 +54,7 @@ function SessionsHelp() {
       <div
         class={
           open()
-            ? "absolute top-full right-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
+            ? "absolute top-full left-0 z-50 mt-1.5 w-80 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md"
             : "sr-only"
         }
         id={id}
@@ -151,8 +151,10 @@ export function SessionsByAgentScreen() {
   return (
     <Shell
       description={<span>{t(() => m.sessions_by_agent_subtitle())}</span>}
-      level="server"
       heading={<span>{t(() => m.nav_sessions())}</span>}
+      screen={t(() => m.nav_sessions())}
+      help={<SessionsHelp />}
+      level="server"
     >
       <Show when={!q.isPending} fallback={<LoadingBlock />}>
         <Show
@@ -165,7 +167,6 @@ export function SessionsByAgentScreen() {
           }
         >
           <DataGrid
-            beforeSort={<SessionsHelp />}
             empty={t(() => m.sessions_empty_body())}
             filters={[
               {
@@ -184,7 +185,7 @@ export function SessionsByAgentScreen() {
               {
                 id: "agent",
                 label: t(() => m.sessions_col_agent()),
-                class: "w-[220px] font-mono",
+                class: "w-[220px]",
                 search: (row) => row.agent,
                 sortValue: (row) => row.agent,
                 cell: (row) => row.agent,

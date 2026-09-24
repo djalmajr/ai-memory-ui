@@ -10,6 +10,7 @@ export function NotFoundScreen() {
     <Shell
       description={<span>{t(() => m.notfound_body())}</span>}
       heading={<span>{t(() => m.notfound_title())}</span>}
+      screen={t(() => m.notfound_title())}
       level="server"
     >
       <EmptyState title={t(() => m.notfound_title())} body={t(() => m.notfound_body())} />

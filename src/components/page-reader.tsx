@@ -1,7 +1,9 @@
 import {
   Activity,
   Calendar,
+  Check,
   ChevronRight,
+  Copy,
   Hash,
   Layers,
   Link2,
@@ -10,19 +12,90 @@ import {
   Type,
   Users,
 } from "~/components/icons";
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 
-import { Markdown, stripFrontmatter } from "~/components/markdown";
+import { Link, useNavigate } from "@tanstack/solid-router";
+
+import { Tooltip } from "~/components/tooltip";
+import { Markdown, stripFrontmatter, stripLeadingTitle } from "~/components/markdown";
 import { Chip, KindBadge } from "~/components/ui-bits";
 import { formatDateShort } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import type { ApiPage, RelatedPage } from "~/lib/types";
 import * as m from "~/paraglide/messages";
-import { cn } from "~/lib/utils";
 
-export function PageReader(props: { page: ApiPage; onNavigate: (path: string) => void }) {
+export function PagePathBreadcrumb(props: { path: string; project: string; workspace: string }) {
+  const [copied, setCopied] = createSignal(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(copiedTimer));
+  const copyPath = () => {
+    const value = `${props.workspace}/${props.project}/${props.path}`;
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  const segments = () => props.path.split("/").filter(Boolean);
+  const crumb = "truncate rounded-sm hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring";
+  return (
+    <nav aria-label="breadcrumb" class="flex shrink-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      <Link class={crumb} params={{ workspace: props.workspace }} to="/workspaces/$workspace">
+        {props.workspace}
+      </Link>
+      <span class="opacity-40">/</span>
+      <Link
+        class={crumb}
+        params={{ project: props.project, workspace: props.workspace }}
+        to="/s/$workspace/$project"
+      >
+        {props.project}
+      </Link>
+      <For each={segments()}>
+        {(segment, index) => (
+          <>
+            <span class="opacity-40">/</span>
+            <Show
+              when={index() === segments().length - 1}
+              fallback={
+                <Link
+                  class={crumb}
+                  params={{ project: props.project, workspace: props.workspace }}
+                  search={{ q: `${segments().slice(0, index() + 1).join("/")}/` }}
+                  to="/s/$workspace/$project"
+                >
+                  {segment}
+                </Link>
+              }
+            >
+              <span class="truncate font-medium text-foreground">{segment}</span>
+            </Show>
+          </>
+        )}
+      </For>
+      <Tooltip content={copied() ? t(() => m.page_path_copied()) : t(() => m.page_copy_path())}>
+        <button
+          aria-label={copied() ? t(() => m.page_path_copied()) : t(() => m.page_copy_path())}
+          class="ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+          onClick={() => copyPath()}
+        >
+          <Show when={copied()} fallback={<Copy size={12} />}>
+            <Check size={12} />
+          </Show>
+        </button>
+      </Tooltip>
+    </nav>
+  );
+}
+
+export function PageReader(props: {
+  onNavigate: (path: string) => void;
+  page: ApiPage;
+}) {
   // Soft-nav for same-project wikilinks; cross-project links fall through to
   // their href (full navigation), which already carries the correct basepath.
+  const navigate = useNavigate();
   const handleWikilinkClick = (event: MouseEvent) => {
     const anchor = (event.target as HTMLElement | null)?.closest?.("a.wikilink") as
       | HTMLAnchorElement
@@ -33,70 +106,62 @@ export function PageReader(props: { page: ApiPage; onNavigate: (path: string) =>
     }
     const ws = anchor.dataset.ws;
     const proj = anchor.dataset.proj;
+    if (!ws || !proj) return;
+    if (anchor.dataset.q != null) {
+      event.preventDefault();
+      void navigate({
+        params: { project: proj, workspace: ws },
+        search: anchor.dataset.q ? { q: anchor.dataset.q } : {},
+        to: "/s/$workspace/$project",
+      });
+      return;
+    }
     const path = anchor.dataset.path;
-    if (!ws || !proj || path == null) return;
+    if (path == null) return;
     if (ws === props.page.workspace && proj === props.page.project) {
       event.preventDefault();
       props.onNavigate(path);
     }
   };
   return (
-    <article class="min-w-0" data-testid="page-reader">
-      <header class="border-b p-6">
-        <nav aria-label="breadcrumb" class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-          <span class="truncate">{props.page.workspace}</span>
-          <span class="opacity-40">/</span>
-          <span class="truncate">{props.page.project}</span>
-          <For each={props.page.path.split("/")}>
-            {(segment, index) => (
-              <>
-                <span class="opacity-40">/</span>
-                <span
-                  class={cn(
-                    "truncate",
-                    index() === props.page.path.split("/").length - 1 && "font-medium text-foreground",
-                  )}
-                >
-                  {segment}
-                </span>
-              </>
-            )}
-          </For>
-        </nav>
+    <article class="flex min-w-0 flex-col gap-4" data-testid="page-reader">
+      <header>
+        <h3 class="text-2xl font-semibold tracking-normal">{props.page.title}</h3>
         <div class="mt-2 flex flex-wrap items-center gap-2">
-          <h3 class="text-2xl font-semibold tracking-normal">{props.page.title}</h3>
-          <KindBadge kind={props.page.kind} />
-          <Chip class="bg-muted text-muted-foreground">{props.page.tier}</Chip>
-          <Show when={props.page.pinned}>
-            <Chip class="bg-primary/15 text-primary">{t(() => m.reader_pinned())}</Chip>
-          </Show>
+          <p class="text-xs text-muted-foreground">
+            {t(() => m.reader_updated())} {formatDateShort(props.page.updated_at)}
+            <Show when={props.page.supersedes}>
+              {(supersedes) => (
+                <>
+                  {" · "}
+                  {t(() => m.reader_supersedes())} {supersedes()}
+                </>
+              )}
+            </Show>
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <KindBadge kind={props.page.kind} />
+            <Chip class="bg-muted text-muted-foreground">{props.page.tier}</Chip>
+            <Show when={props.page.pinned}>
+              <Chip class="bg-primary/15 text-primary">{t(() => m.reader_pinned())}</Chip>
+            </Show>
+          </div>
         </div>
-        <p class="mt-2 text-xs text-muted-foreground">
-          {t(() => m.reader_updated())} {formatDateShort(props.page.updated_at)}
-          <Show when={props.page.supersedes}>
-            {(supersedes) => (
-              <>
-                {" · "}
-                {t(() => m.reader_supersedes())} {supersedes()}
-              </>
-            )}
-          </Show>
-        </p>
       </header>
       <Show when={Object.keys(props.page.frontmatter ?? {}).length > 0}>
         <Frontmatter frontmatter={props.page.frontmatter} />
       </Show>
-      <div class="min-w-0 p-6">
+      <div class="min-w-0">
         <Markdown
           onClick={handleWikilinkClick}
           pagePath={props.page.path}
           project={props.page.project}
-          source={stripFrontmatter(props.page.body_markdown)}
+          source={stripLeadingTitle(stripFrontmatter(props.page.body_markdown), props.page.title)}
           workspace={props.page.workspace}
         />
       </div>
       <Show when={props.page.links.length > 0 || props.page.backlinks.length > 0}>
-        <footer class="grid gap-6 border-t p-6 sm:grid-cols-2" data-testid="page-relations">
+        <footer class="grid gap-6 border-t pt-4 sm:grid-cols-2" data-testid="page-relations">
           <RelatedList items={props.page.links} onNavigate={props.onNavigate} title={t(() => m.reader_links())} />
           <RelatedList items={props.page.backlinks} onNavigate={props.onNavigate} title={t(() => m.reader_backlinks())} />
         </footer>
@@ -251,7 +316,6 @@ export function Frontmatter(props: { frontmatter: Record<string, unknown> }) {
     Object.entries(props.frontmatter ?? {}).filter(([, value]) => value != null && value !== ""),
   );
   return (
-    <div class="px-6 pt-4">
       <details
         class="group/fm overflow-hidden rounded-lg border bg-card"
         data-testid="frontmatter"
@@ -283,6 +347,5 @@ export function Frontmatter(props: { frontmatter: Record<string, unknown> }) {
           </dl>
         </Show>
       </details>
-    </div>
   );
 }

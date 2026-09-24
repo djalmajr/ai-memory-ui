@@ -13,7 +13,8 @@ import {
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import type { ProjectPages } from "~/components/file-tree";
-import { KindBadge, Metric } from "~/components/ui-bits";
+import { StatCell, StatStrip } from "~/components/stat-strip";
+import { KindBadge } from "~/components/ui-bits";
 import { formatDateShort, formatRelative } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import type {
@@ -153,7 +154,7 @@ export function HealthRow(props: {
                 >
                   <KindBadge kind={item.kind} />
                   <span class="min-w-0 truncate">{item.title}</span>
-                  <span class="ml-auto shrink-0 truncate font-mono text-[10px] text-muted-foreground/70">
+                  <span class="ml-auto shrink-0 truncate text-[10px] text-muted-foreground/70">
                     {item.project}
                   </span>
                 </button>
@@ -253,7 +254,7 @@ export function HealthCard(props: { health: MemoryHealth; onOpenDoc: (project: s
           value={props.health.orphans}
         />
       </div>
-      <p class="mt-3 font-mono text-xs text-muted-foreground">
+      <p class="mt-3 text-xs text-muted-foreground">
         {">_ "}
         {t(() => m.health_audit())}
       </p>
@@ -367,14 +368,16 @@ export function WorkspaceOverviewBody(props: {
 export function BriefingView(props: { briefing: BriefingSnapshot; hidePendingHandoff?: boolean }) {
   return (
     <div class="flex flex-col gap-4" data-testid="briefing">
-      <div class="grid grid-cols-3 gap-3">
-        <Metric label={t(() => m.briefing_latest())} value={props.briefing.counts.pages_latest} />
-        <Metric label={t(() => m.briefing_versions())} value={props.briefing.counts.pages_all} />
-        <Metric label={t(() => m.briefing_sessions())} value={props.briefing.counts.sessions} />
-        <Metric label={t(() => m.briefing_observations())} value={props.briefing.counts.observations} />
-        <Metric label={t(() => m.briefing_pages_7d())} value={props.briefing.activity_7d.pages_updated} />
-        <Metric label={t(() => m.briefing_pages_30d())} value={props.briefing.activity_30d.pages_updated} />
-      </div>
+      <StatStrip>
+        <StatCell label={t(() => m.briefing_latest())} value={props.briefing.counts.pages_latest} />
+        <StatCell label={t(() => m.briefing_versions())} value={props.briefing.counts.pages_all} />
+        <StatCell label={t(() => m.briefing_sessions())} value={props.briefing.counts.sessions} />
+      </StatStrip>
+      <StatStrip>
+        <StatCell label={t(() => m.briefing_observations())} value={props.briefing.counts.observations} />
+        <StatCell label={t(() => m.briefing_pages_7d())} value={props.briefing.activity_7d.pages_updated} />
+        <StatCell label={t(() => m.briefing_pages_30d())} value={props.briefing.activity_30d.pages_updated} />
+      </StatStrip>
       <Show when={!props.hidePendingHandoff && props.briefing.pending_handoff_count > 0}>
         <div class="flex items-center gap-2 rounded-lg border border-warning bg-warning/15 p-2.5 text-xs text-warning-foreground">
           <Clock3 size={14} />

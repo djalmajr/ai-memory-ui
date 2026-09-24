@@ -4,9 +4,12 @@ import { Show, createSignal } from "solid-js";
 import { Badge } from "~/components/badge";
 import { Button } from "~/components/button";
 import { DataGrid } from "~/components/data-grid";
+import { Mail, X } from "~/components/icons";
 import { Input } from "~/components/input";
 import { ScrollArea } from "~/components/scroll-area";
 import { ScopeBreadcrumb, Shell } from "~/components/shell";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/tabs";
+import { Tooltip } from "~/components/tooltip";
 import { Skeleton } from "~/components/skeleton";
 import {
   adminCancelMessage,
@@ -112,20 +115,19 @@ export function ScopeMessagesScreen(props: { project: string; workspace: string 
   return (
     <Shell
       description={<span>{t(() => m.messages_subtitle())}</span>}
-      heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.messages_title())} />}
+      heading={<ScopeBreadcrumb scope={scope()} screen={t(() => m.nav_messages())} />}
+      screen={t(() => m.nav_messages())}
       level="scope"
       pendingCount={pending$.data?.length}
       scope={scope()}
     >
-      <div class="flex flex-wrap gap-2">
-        <Button type="button" variant={box() === "inbox" ? "default" : "outline"} onClick={() => setBox("inbox")}>
-          {t(() => m.messages_inbox())}
-        </Button>
-        <Button type="button" variant={box() === "outbox" ? "default" : "outline"} onClick={() => setBox("outbox")}>
-          {t(() => m.messages_outbox())}
-        </Button>
-      </div>
-
+      <Tabs defaultValue="inbox" value={box()} onChange={(value) => setBox(value === "outbox" ? "outbox" : "inbox")}>
+        <TabsList>
+          <TabsTrigger value="inbox">{t(() => m.messages_inbox())}</TabsTrigger>
+          <TabsTrigger value="outbox">{t(() => m.messages_outbox())}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="inbox" />
+        <TabsContent value="outbox">
       <Show when={canMutate(tier())}>
         <section class="flex flex-col gap-2 rounded-lg border border-hairline p-4">
           <div class="flex flex-wrap gap-2">
@@ -156,6 +158,8 @@ export function ScopeMessagesScreen(props: { project: string; workspace: string 
           </Button>
         </section>
       </Show>
+        </TabsContent>
+      </Tabs>
 
       <Show when={notice()}>
         {(text) => <p class="text-sm text-muted-foreground">{text()}</p>}
@@ -163,7 +167,7 @@ export function ScopeMessagesScreen(props: { project: string; workspace: string 
       <Show when={popped()}>
         {(message) => (
           <ScrollArea class="rounded-lg border border-hairline">
-            <pre class="whitespace-pre-wrap p-4 font-mono text-xs">{message().body}</pre>
+            <pre class="whitespace-pre-wrap p-4 text-sm">{message().body}</pre>
           </ScrollArea>
         )}
       </Show>
@@ -215,21 +219,39 @@ export function ScopeMessagesScreen(props: { project: string; workspace: string 
             {
               id: "actions",
               label: "",
-              class: "w-28",
+              class: "w-16",
               hideable: false,
               cell: (row) => (
-                <>
+                <div class="flex justify-end gap-1">
                   <Show when={canMutate(tier()) && box() === "inbox"}>
-                    <Button disabled={pending()} type="button" variant="outline" onClick={() => void pop(row.id)}>
-                      {t(() => m.messages_pop())}
-                    </Button>
+                    <Tooltip content={t(() => m.messages_pop())}>
+                      <Button
+                        aria-label={t(() => m.messages_pop())}
+                        disabled={pending()}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void pop(row.id)}
+                      >
+                        <Mail size={16} />
+                      </Button>
+                    </Tooltip>
                   </Show>
                   <Show when={canMutate(tier()) && box() === "outbox"}>
-                    <Button disabled={pending()} type="button" variant="outline" onClick={() => void cancel(row.id)}>
-                      {t(() => m.messages_cancel())}
-                    </Button>
+                    <Tooltip content={t(() => m.messages_cancel())}>
+                      <Button
+                        aria-label={t(() => m.messages_cancel())}
+                        disabled={pending()}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void cancel(row.id)}
+                      >
+                        <X size={16} />
+                      </Button>
+                    </Tooltip>
                   </Show>
-                </>
+                </div>
               ),
             },
           ]}
