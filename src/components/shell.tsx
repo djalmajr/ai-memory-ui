@@ -4,7 +4,6 @@ import {
   Archive,
   BookOpen,
   Brain,
-  Cable,
   ChevronLeft,
   CircleHelp,
   Clock,
@@ -135,7 +134,6 @@ export function serverGroups(current: Tier): NavGroup[] {
       );
     }
     administration.push(
-      { icon: Cable, label: () => m.nav_consumers(), to: "/consumers" },
       { icon: Settings2, label: () => m.nav_ops(), to: "/ops" },
       { icon: Archive, label: () => m.nav_backups(), to: "/backups" },
       { icon: Database, label: () => m.nav_config(), to: "/config" },

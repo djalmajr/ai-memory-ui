@@ -15,7 +15,7 @@ export function readBasePath(): string {
   );
 }
 
-// Raiz do engine: `/admin/*` e `/oauth2/*` penduram aqui.
+// Raiz do engine: `/admin/*` e `/auth/*` penduram aqui.
 export const BASE_PATH = readBasePath();
 
 // Raiz da API de leitura. Vazio => `/api/v1` (default inalterado).

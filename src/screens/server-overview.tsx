@@ -32,8 +32,7 @@ import * as m from "~/paraglide/messages";
 // Layout segue o protótipo Paper "Visão geral · Padrão" (J3B-0): stat strip,
 // "Requer atenção" e "Atividade por cliente". Páginas e observações vêm de
 // `counts`. Disco, tamanho do banco e bytes recuperáveis vêm de `storage`
-// (`data_dir_free_bytes` pode ser null). Chaves `amk_` continuam no sidecar
-// mcp-auth — esta tela não inventa essa célula.
+// (`data_dir_free_bytes` pode ser null).
 
 interface AttentionRow {
   pending: number;

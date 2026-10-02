@@ -1,10 +1,11 @@
+import { useNavigate } from "@tanstack/solid-router";
 import * as PopoverPrimitive from "~/components/popover";
 import { LogOut, Moon, Sun } from "~/components/icons";
-import { For, Show, createSignal, onSettled } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 
 import { Button } from "~/components/button";
 import { Tooltip } from "~/components/tooltip";
-import { buildLogoutUrl, fetchCurrentUser, type CurrentUser } from "~/lib/api";
+import { authMe, signOut, type AuthMe } from "~/lib/auth";
 import { locales, switchLocale, t, useLocale } from "~/lib/i18n";
 import type { Locale } from "~/lib/i18n";
 import { theme, toggleTheme } from "~/lib/theme";
@@ -63,21 +64,12 @@ export function LanguageSwitcher() {
   );
 }
 
-// Identidade do usuário logado (sessão oauth2-proxy), buscada UMA vez e
-// compartilhada entre as instâncias do Avatar (header + home). `undefined`
-// enquanto carrega; `null` quando não há sessão / backend sem oauth2-proxy.
-const [currentUser, setCurrentUser] = createSignal<CurrentUser | null | undefined>(undefined);
-export { currentUser };
-let currentUserStarted = false;
-export function ensureCurrentUser() {
-  if (currentUserStarted) return;
-  currentUserStarted = true;
-  void fetchCurrentUser().then(setCurrentUser);
-}
-
-export function userDisplayName(user: CurrentUser | null | undefined): string {
+// Identidade do usuário logado: vem do estado de autenticação que `~/lib/auth`
+// mantém a partir de `GET /auth/me` (sinal `authMe`) — nenhuma chamada própria
+// a esse endpoint. `null` antes de o estado resolver ou sem sessão.
+export function userDisplayName(user: AuthMe | null | undefined): string {
   if (!user) return "";
-  return user.preferredUsername || user.user || user.email || "";
+  return user.username || user.name || "";
 }
 
 // Iniciais (≤2 letras) do nome de exibição; ignora o domínio em e-mails.
@@ -91,19 +83,16 @@ export function userInitials(name: string): string {
 
 export function Avatar() {
   const [open, setOpen] = createSignal(false);
-  onSettled(() => {
-    void ensureCurrentUser();
-  });
-  const name = () => userDisplayName(currentUser());
+  const navigate = useNavigate();
+  const name = () => userDisplayName(authMe());
   const initials = () => {
-    const user = currentUser();
-    if (user === undefined) return ""; // ainda carregando
-    const display = userDisplayName(user);
+    const display = name();
     return display ? userInitials(display) : "?";
   };
   const doLogout = async () => {
     setOpen(false);
-    window.location.assign(await buildLogoutUrl());
+    await signOut();
+    navigate({ to: "/login" });
   };
   return (
     <div class="relative">
@@ -125,11 +114,6 @@ export function Avatar() {
               <Tooltip class="block min-w-0" content={name()}>
                 <p class="truncate text-sm font-medium">{name()}</p>
               </Tooltip>
-              <Show when={currentUser()?.email && currentUser()?.email !== name()}>
-                <Tooltip class="block min-w-0" content={currentUser()?.email}>
-                  <p class="truncate text-xs text-muted-foreground">{currentUser()?.email}</p>
-                </Tooltip>
-              </Show>
             </div>
           </Show>
           <button
