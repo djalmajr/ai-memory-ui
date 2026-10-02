@@ -82,10 +82,6 @@ function AccessHelp() {
         id={id}
         role="tooltip"
       >
-        <p>
-          <span class="font-medium">{t(() => m.access_subtitle())}. </span>
-          {t(() => m.access_note_external())}
-        </p>
       </div>
     </div>
   );

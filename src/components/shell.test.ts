@@ -15,7 +15,7 @@ const SCOPE = { workspace: "default", project: "scratch" };
 
 const SERVER_PUBLIC = ["/", "/workspaces", "/graph"];
 const SERVER_MONITORING = ["/sessions", "/activity", "/audit"];
-const SERVER_ADMIN = ["/consumers", "/ops", "/backups", "/config"];
+const SERVER_ADMIN = ["/ops", "/backups", "/config"];
 
 describe("sidebar de servidor", () => {
   it("root vê tudo, com Usuários", () => {
@@ -26,7 +26,6 @@ describe("sidebar de servidor", () => {
       "/graph",
       "/access",
       "/users",
-      "/consumers",
       "/ops",
       "/backups",
       "/config",
