@@ -11,15 +11,15 @@ import { ScrollArea } from "~/components/scroll-area";
 import { Select } from "~/components/select";
 import { Shell } from "~/components/shell";
 import { Skeleton } from "~/components/skeleton";
-import { adminBackup, adminCheckpoints, adminCommit, adminCompact, adminExportOkf, adminProjects, adminReorg, type CompactReport } from "~/lib/admin-api";
+import { adminBackup, adminCheckpoints, adminCommit, adminExportOkf, adminProjects, adminReorg } from "~/lib/admin-api";
 import type { Checkpoint, CommitResult } from "~/lib/admin-types";
 import { ApiError } from "~/lib/api";
 import { canMutate, tier } from "~/lib/auth";
-import { formatBytes } from "~/lib/utils";
 import { formatDateTime, fromUnixSeconds } from "~/lib/datetime";
 import { t } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
 import * as m from "~/paraglide/messages";
+import { CompactCard } from "~/screens/compact-job";
 
 // Operações de servidor (B8). Só as quatro rotas globais: backup, checkpoints,
 // commit e reorg. Lint/embed/forget-sweep/auto-improve exigem workspace+project
@@ -125,11 +125,7 @@ export function ServerOpsScreen() {
   const [reorgError, setReorgError] = createSignal<string | null>(null);
   const [reorgReport, setReorgReport] = createSignal<unknown>(null);
 
-  const [compactOpen, setCompactOpen] = createSignal(false);
   const [reorgOpen, setReorgOpen] = createSignal(false);
-  const [compactPending, setCompactPending] = createSignal(false);
-  const [compactError, setCompactError] = createSignal<string | null>(null);
-  const [compactReport, setCompactReport] = createSignal<CompactReport | null>(null);
 
   const [exportWs, setExportWs] = createSignal("");
   const [exportProject, setExportProject] = createSignal("");
@@ -197,20 +193,6 @@ export function ServerOpsScreen() {
       return false;
     } finally {
       setReorgPending(false);
-    }
-  };
-
-  const runCompact = async () => {
-    setCompactPending(true);
-    setCompactError(null);
-    try {
-      setCompactReport(await adminCompact());
-      return true;
-    } catch (error) {
-      setCompactError(failMessage(error));
-      return false;
-    } finally {
-      setCompactPending(false);
     }
   };
 
@@ -352,65 +334,20 @@ export function ServerOpsScreen() {
           </Show>
         </OpCard>
 
-        <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-sm font-medium">{t(() => m.ops_compact_title())}</h2>
-              <p class="text-xs text-muted-foreground">{t(() => m.ops_compact_desc())}</p>
-            </div>
-            <Button
-              disabled={!canMutate(tier())}
-              type="button"
-              variant="outline"
-              onClick={() => setCompactOpen(true)}
-            >
-              {t(() => m.ops_execute())}
-            </Button>
-            <Show when={compactOpen()}>
-              <ConfirmDialog
-                body={t(() => m.ops_compact_desc())}
-                confirmLabel={t(() => m.ops_compact_confirm())}
-                error={compactError()}
-                pending={compactPending()}
-                title={t(() => m.ops_compact_title())}
-                onClose={() => setCompactOpen(false)}
-                onConfirm={() => void runCompact().then((ok) => { if (ok) setCompactOpen(false); })}
-              />
-            </Show>
-            <Show when={reorgOpen()}>
-              <ConfirmDialog
-                body={t(() => m.ops_reorg_confirm_body())}
-                confirmLabel={t(() => m.ops_run())}
-                destructive
-                error={reorgError()}
-                pending={reorgPending()}
-                title={t(() => m.ops_reorg_title())}
-                onClose={() => setReorgOpen(false)}
-                onConfirm={() => void runReorg().then((ok) => { if (ok) setReorgOpen(false); })}
-              />
-            </Show>
-          </div>
-          <Show when={compactError()}>
-            {(message) => (
-              <p class="text-sm text-destructive" role="alert">
-                {message()}
-              </p>
-            )}
-          </Show>
-          <Show when={compactReport()}>
-            {(report) => (
-              <p class="font-mono text-sm text-muted-foreground">
-                {t(() =>
-                  m.ops_compact_result({
-                    after: formatBytes(report().bytes_after),
-                    before: formatBytes(report().bytes_before),
-                    reclaimed: formatBytes(report().bytes_reclaimed),
-                  }),
-                )}
-              </p>
-            )}
-          </Show>
-        </section>
+        <CompactCard />
+
+        <Show when={reorgOpen()}>
+          <ConfirmDialog
+            body={t(() => m.ops_reorg_confirm_body())}
+            confirmLabel={t(() => m.ops_run())}
+            destructive
+            error={reorgError()}
+            pending={reorgPending()}
+            title={t(() => m.ops_reorg_title())}
+            onClose={() => setReorgOpen(false)}
+            onConfirm={() => void runReorg().then((ok) => { if (ok) setReorgOpen(false); })}
+          />
+        </Show>
 
         <section class="flex flex-col gap-4 rounded-lg border border-hairline p-4">
           <div class="flex items-start justify-between gap-4">

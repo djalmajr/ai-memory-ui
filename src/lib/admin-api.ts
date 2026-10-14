@@ -34,10 +34,10 @@ import type {
 // - 401 do host => `text/plain` ("auth required\n").
 // Por isso o parser de erro tenta JSON e cai para texto, nunca o contrário.
 
-async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function adminFetch(path: string, init?: RequestInit): Promise<Response> {
   const method = (init?.method ?? "GET").toUpperCase();
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-  const response = await fetch(`${BASE_PATH}/admin${path}`, {
+  return fetch(`${BASE_PATH}/admin${path}`, {
     ...init,
     credentials: "include",
     headers: {
@@ -46,6 +46,10 @@ async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+}
+
+async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await adminFetch(path, init);
 
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response));
@@ -57,14 +61,26 @@ async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+// Corpo de erro de proxy (Cloudflare: `cloudflare_error: true`, `title`,
+// `status`). Sem isso o operador via o JSON cru como se fosse a resposta do
+// engine. O engine devolve `{ error }`, nunca `title`+`status`, então não há
+// colisão.
+function proxyErrorText(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const { title, status } = payload as { title?: unknown; status?: unknown };
+  if (typeof title !== "string" || title === "") return null;
+  if (typeof status !== "number" && typeof status !== "string") return null;
+  return `${status} ${title}`;
+}
+
 async function errorMessage(response: Response): Promise<string> {
   const fallback = `${response.status} ${response.statusText}`;
   try {
     const text = await response.text();
     if (!text) return fallback;
     try {
-      const payload = JSON.parse(text) as { error?: string };
-      return payload.error ?? text;
+      const payload = JSON.parse(text) as unknown;
+      return proxyErrorText(payload) ?? (payload as { error?: string } | null)?.error ?? text;
     } catch {
       // 400 do extractor e 401 do host são texto puro.
       return text.trim() || fallback;
@@ -76,11 +92,17 @@ async function errorMessage(response: Response): Promise<string> {
 
 // Rotas ausentes (engine mais antigo que a UI) degradam para `null` em vez de
 // derrubar a tela — o mesmo contrato que `api.ts` usa para overview/briefing.
-async function adminOptional<T>(path: string, init?: RequestInit): Promise<T | null> {
+// `absentStatuses` cobre rota que existe só para outro método: o axum responde
+// 405, não 404, a um GET numa rota só-POST.
+async function adminOptional<T>(
+  path: string,
+  init?: RequestInit,
+  absentStatuses: readonly number[] = [404],
+): Promise<T | null> {
   try {
     return await adminRequest<T>(path, init);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return null;
+    if (error instanceof ApiError && absentStatuses.includes(error.status)) return null;
     throw error;
   }
 }
@@ -431,10 +453,169 @@ export interface CompactReport {
   bytes_reclaimed: number;
 }
 
-/** Lock exclusivo + VACUUM. `confirm` é obrigatório no engine. */
-export function adminCompact(): Promise<CompactReport> {
-  return adminRequest<CompactReport>("/compact", json({ confirm: true }));
+export type CompactState = "idle" | "running" | "succeeded" | "failed";
+
+/** `GET /admin/compact` e corpo do 202/409. Sem percentual: o SQLite não
+ *  reporta progresso de VACUUM. */
+export interface CompactJobStatus {
+  job_id: string | null;
+  state: CompactState;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_ms: number | null;
+  database_bytes_at_start: number | null;
+  reclaimable_bytes_at_start: number | null;
+  previous_duration_ms: number | null;
+  report: CompactReport | null;
+  error: string | null;
 }
+
+/** Os desfechos de `POST /admin/compact` com `background: true`. */
+export type CompactStart =
+  | { kind: "started"; job: CompactJobStatus }
+  | { kind: "running"; job: CompactJobStatus | null }
+  | { kind: "report"; report: CompactReport }
+  | { kind: "timeout"; status: 504 | 524 };
+
+/** Lock exclusivo + VACUUM. `confirm` é obrigatório no engine. Com
+ *  `background` o engine responde 202 na hora; um engine antigo ignora o campo
+ *  e roda síncrono (200, ou 504/524 do proxy aos 120 s com o VACUUM ainda
+ *  correndo). 409 e 504/524 são desfechos, não falhas: voltam como valor. */
+export async function adminCompact(): Promise<CompactStart> {
+  const response = await adminFetch("/compact", json({ confirm: true, background: true }));
+  switch (response.status) {
+    case 202:
+      return { kind: "started", job: (await response.json()) as CompactJobStatus };
+    case 200:
+      return { kind: "report", report: (await response.json()) as CompactReport };
+    case 409: {
+      const body = (await response.json().catch(() => null)) as { job?: CompactJobStatus } | null;
+      return { kind: "running", job: body?.job ?? null };
+    }
+    case 504:
+    case 524:
+      return { kind: "timeout", status: response.status };
+    default:
+      throw new ApiError(response.status, await errorMessage(response));
+  }
+}
+
+/** Teto do GET de estado. Sem ele um fetch pendurado deixaria o poll "em voo"
+ *  para sempre e a cadeia de polling nunca mais andaria. */
+export const COMPACT_STATUS_TIMEOUT_MS = 10_000;
+
+/** `GET /admin/compact`. 404 e 405 (engine sem a rota; o axum devolve 405 a um
+ *  GET numa rota só-POST) => `null`: a tela cai no fluxo síncrono. Estourar o
+ *  teto rejeita como qualquer outra falha de poll. */
+export function adminCompactStatus(): Promise<CompactJobStatus | null> {
+  return adminOptional<CompactJobStatus>(
+    "/compact",
+    { signal: AbortSignal.timeout(COMPACT_STATUS_TIMEOUT_MS) },
+    [404, 405],
+  );
+}
+
+// Helpers puros da contagem e do polling; ficam aqui (e não no componente) para
+// os testes não carregarem a árvore de UI.
+/** `mm:ss`. Minutos não truncam em 59: um VACUUM de 1 h mostra `60:00`. */
+export function formatElapsed(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1_000) : 0;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Duração aproximada ("cerca de X"). `s` e `min` valem nos três idiomas. */
+export function formatApproxDuration(ms: number): string {
+  const seconds = Number.isFinite(ms) && ms > 0 ? ms / 1_000 : 0;
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
+/** Tempo decorrido a partir de `started_at`, para a contagem de 1 s entre os
+ *  polls. Se o relógio do servidor estiver à frente, não passa de zero. Sem
+ *  `started_at` legível, usa o `elapsed_ms` do último poll. */
+export function elapsedSince(job: CompactJobStatus, nowMs: number): number {
+  const started = job.started_at ? Date.parse(job.started_at) : Number.NaN;
+  if (Number.isNaN(started)) return job.elapsed_ms ?? 0;
+  return Math.max(0, nowMs - started);
+}
+
+/** Só o estado `running` mantém o polling vivo. */
+export function shouldKeepPolling(job: CompactJobStatus | null): boolean {
+  return job?.state === "running";
+}
+
+// Agendador do polling: máquina de estados pura sobre
+// `{ inFlight, queued, generation, running, disposed }`. O componente só liga
+// timers e fetch às transições. Duas regras vêm de bugs reais do Solid 2:
+// - decide-se pelo job RECEBIDO, nunca por um sinal: a escrita só é visível
+//   depois do flush em microtask;
+// - um poll pedido enquanto outro está em voo vira `queued` e roda quando o
+//   ciclo em voo termina, mesmo que o resultado dele seja descartado por
+//   `generation`.
+export interface CompactPollState {
+  inFlight: boolean;
+  queued: boolean;
+  /** Sobe quando o POST decide o estado; resultados de GETs anteriores são velhos. */
+  generation: number;
+  /** Último estado conhecido do job era `running`. */
+  running: boolean;
+  disposed: boolean;
+}
+
+export function createCompactPoll(): CompactPollState {
+  return { inFlight: false, queued: false, generation: 0, running: false, disposed: false };
+}
+
+/** Pedido de poll (mount, timer). Em voo: marca `queued` e não roda. */
+export function pollRequested(s: CompactPollState): { state: CompactPollState; run: boolean } {
+  if (s.disposed) return { state: s, run: false };
+  if (s.inFlight) return { state: { ...s, queued: true }, run: false };
+  return { state: s, run: true };
+}
+
+/** O GET sai. `token` identifica a geração em que ele partiu. */
+export function pollStarted(s: CompactPollState): { state: CompactPollState; token: number } {
+  return { state: { ...s, inFlight: true, queued: false }, token: s.generation };
+}
+
+export interface CompactPollSettled {
+  state: CompactPollState;
+  /** `false`: resultado de geração velha ou tela desmontada; não escrever. */
+  apply: boolean;
+  /** Agendar o próximo poll. */
+  next: boolean;
+}
+
+/** GET respondeu. `job` null = engine sem a rota (404/405). */
+export function pollSucceeded(
+  s: CompactPollState,
+  token: number,
+  job: CompactJobStatus | null,
+): CompactPollSettled {
+  const apply = !s.disposed && token === s.generation;
+  const running = apply ? shouldKeepPolling(job) : s.running;
+  const state = { ...s, inFlight: false, running };
+  return { state, apply, next: !s.disposed && (s.queued || running) };
+}
+
+/** GET falhou (rede, proxy, teto de tempo). Com job `running` a cadeia segue. */
+export function pollFailed(s: CompactPollState, token: number): CompactPollSettled {
+  const apply = !s.disposed && token === s.generation;
+  const state = { ...s, inFlight: false };
+  return { state, apply, next: !s.disposed && (s.queued || s.running) };
+}
+
+/** O POST decidiu o estado (`job` null: report, timeout ou 409 sem job). */
+export function pollJobDecided(s: CompactPollState, job: CompactJobStatus | null): CompactPollState {
+  return { ...s, generation: s.generation + 1, running: shouldKeepPolling(job) };
+}
+
+export function pollDisposed(s: CompactPollState): CompactPollState {
+  return { ...s, disposed: true, queued: false };
+}
+
 
 /** `POST /admin/export-okf?workspace&project` — tarball gzip. */
 export async function adminExportOkf(scope: ScopeArgs): Promise<{ blob: Blob; filename: string }> {
